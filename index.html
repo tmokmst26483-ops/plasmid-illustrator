@@ -94,14 +94,6 @@
             <button id="btn-export-png" class="btn-blue" style="flex: 1; padding: 10px 5px; font-size: 12px;">PNG</button>
             <button id="btn-export-jpeg" class="btn-blue" style="flex: 1; padding: 10px 5px; font-size: 12px;">JPEG</button>
         </div>
-
-        <p style="font-size: 11px; color: #aaa; text-align: left; margin-top: 15px; line-height: 1.6;">
-            <b>Shortcuts:</b><br>
-            Del / Backspace: Delete<br>
-            Ctrl + Z: Undo<br>
-            Ctrl + Shift + Z: Redo<br>
-            Ctrl + I: Italic (斜体)
-        </p>
     </div>
 
     <!-- Artboard Layout Container -->
@@ -534,17 +526,22 @@
 
         btnAddLinear.addEventListener("click", () => {
             const newId = nextLinearId++;
-            linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: CENTER - 200, y: CENTER + 250, width: 400, thickness: 8, color: "#9E9E9E" });
+            // 初期状態を太さ2、黒色に設定
+            linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: CENTER - 200, y: CENTER + 250, width: 400, thickness: 2, color: "#000000" });
             clearSelection(); selectedLinearId = newId; renderSelection(); drawMap(); saveState();
         });
 
         btnAddRecomb.addEventListener("click", () => {
             const newId = nextRecombId++;
-            recombsData.push({ id: newId, type: "polygon", color: "#2196F3", p1x: CENTER - 150, p1y: CENTER + 130, p2x: CENTER + 150, p2y: CENTER + 130, p3x: CENTER + 150, p3y: CENTER + 250, p4x: CENTER - 150, p4y: CENTER + 250 });
+            recombsData.push({ 
+                id: newId, type: "polygon", color: "#2196F3", 
+                p1x: CENTER - 150, p1y: CENTER + 130, p2x: CENTER + 150, p2y: CENTER + 130, 
+                p3x: CENTER + 150, p3y: CENTER + 250, p4x: CENTER - 150, p4y: CENTER + 250,
+                binds: {p1: null, p2: null, p3: null, p4: null}
+            });
             clearSelection(); selectedRecombId = newId; renderSelection(); drawMap(); saveState();
         });
 
-        // 共通のクリーンアップ処理（エクスポート用）
         function getCleanSvgString() {
             const clonedSvg = svg.cloneNode(true);
             clonedSvg.querySelectorAll('.resize-handle').forEach(h => h.remove());
@@ -554,18 +551,14 @@
                 t.removeAttribute('stroke-width'); 
                 t.removeAttribute('stroke-dasharray'); 
             });
-
-            // 背景色を白にするためのrect要素を最背面に追加
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             rect.setAttribute("width", "100%");
             rect.setAttribute("height", "100%");
             rect.setAttribute("fill", "white");
             clonedSvg.insertBefore(rect, clonedSvg.firstChild);
-
             return clonedSvg.outerHTML;
         }
 
-        // SVGエクスポート
         btnExportSvg.addEventListener("click", () => {
             const svgString = getCleanSvgString();
             const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
@@ -575,24 +568,17 @@
             document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
         });
 
-        // Canvasを用いた画像（PNG/JPEG）エクスポート
         function exportImage(format) {
             const svgString = getCleanSvgString();
             const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
             const url = URL.createObjectURL(blob);
-            
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement("canvas");
-                // SVGに指定されているwidth, heightを使用
                 canvas.width = svg.getAttribute("width") || 800;
                 canvas.height = svg.getAttribute("height") || 800;
                 const ctx = canvas.getContext("2d");
-                
-                // SVGを描画
                 ctx.drawImage(img, 0, 0);
-                
-                // ダウンロード処理
                 const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
                 const dataUrl = canvas.toDataURL(mimeType);
                 const link = document.createElement("a");
@@ -607,7 +593,81 @@
         btnExportPng.addEventListener("click", () => exportImage('png'));
         btnExportJpeg.addEventListener("click", () => exportImage('jpeg'));
 
+        // Recombination Bindings Updater
+        function updateRecombBindings() {
+            const globalThickness = Number(inputThickness.value) || 15;
+            const totalLength = Number(inputLength.value);
+
+            recombsData.forEach(r => {
+                if (!r.binds) r.binds = { p1: null, p2: null, p3: null, p4: null };
+                
+                ['p1', 'p2', 'p3', 'p4'].forEach(p => {
+                    const ref = r.binds[p];
+                    if (!ref) return;
+                    
+                    let newX = null, newY = null;
+
+                    if (ref.type === 'linear') {
+                        const l = linearsData.find(x => x.id === ref.id);
+                        if (!l) { r.binds[p] = null; return; } 
+                        const th = l.thickness;
+                        if (ref.point === 'start-mid') { newX = l.x; newY = l.y; }
+                        else if (ref.point === 'end-mid') { newX = l.x + l.width; newY = l.y; }
+                        else if (ref.point === 'start-top') { newX = l.x; newY = l.y - th/2; }
+                        else if (ref.point === 'start-bottom') { newX = l.x; newY = l.y + th/2; }
+                        else if (ref.point === 'end-top') { newX = l.x + l.width; newY = l.y - th/2; }
+                        else if (ref.point === 'end-bottom') { newX = l.x + l.width; newY = l.y + th/2; }
+                    } else if (ref.type === 'gene') {
+                        const gene = genesData.find(g => g.id === ref.id);
+                        if (!gene) { r.binds[p] = null; return; }
+                        const gThickness = gene.thickness || globalThickness;
+                        
+                        if (gene.target && gene.target.startsWith("linear_")) {
+                            const lId = parseInt(gene.target.split("_")[1]);
+                            const l = linearsData.find(x => x.id === lId);
+                            if (!l) { r.binds[p] = null; return; }
+                            const startX = l.x + (gene.start / l.bpLength) * l.width;
+                            const endX = l.x + (gene.end / l.bpLength) * l.width;
+                            const y = l.y;
+
+                            if (ref.point === 'start-mid') { newX = startX; newY = y; }
+                            else if (ref.point === 'end-mid') { newX = endX; newY = y; }
+                            else if (ref.point === 'start-top') { newX = startX; newY = y - gThickness/2; }
+                            else if (ref.point === 'start-bottom') { newX = startX; newY = y + gThickness/2; }
+                            else if (ref.point === 'end-top') { newX = endX; newY = y - gThickness/2; }
+                            else if (ref.point === 'end-bottom') { newX = endX; newY = y + gThickness/2; }
+                            else if (ref.point === 'start-outerTop') { newX = startX; newY = y - gThickness; }
+                            else if (ref.point === 'start-outerBottom') { newX = startX; newY = y + gThickness; }
+                            else if (ref.point === 'end-outerTop') { newX = endX; newY = y - gThickness; }
+                            else if (ref.point === 'end-outerBottom') { newX = endX; newY = y + gThickness; }
+                        } else {
+                            const startAngle = ((gene.start / totalLength) * 2 * Math.PI) - (Math.PI / 2);
+                            const endAngle = ((gene.end / totalLength) * 2 * Math.PI) - (Math.PI / 2);
+                            
+                            if (ref.point === 'start-mid') { const pos = getCoordinates(gene.start, totalLength, 200, CENTER); newX = pos.x; newY = pos.y; }
+                            else if (ref.point === 'end-mid') { const pos = getCoordinates(gene.end, totalLength, 200, CENTER); newX = pos.x; newY = pos.y; }
+                            else if (ref.point === 'start-top') { const rOuter = 200 + gThickness/2; newX = CENTER + rOuter * Math.cos(startAngle); newY = CENTER + rOuter * Math.sin(startAngle); }
+                            else if (ref.point === 'start-bottom') { const rInner = 200 - gThickness/2; newX = CENTER + rInner * Math.cos(startAngle); newY = CENTER + rInner * Math.sin(startAngle); }
+                            else if (ref.point === 'end-top') { const rOuter = 200 + gThickness/2; newX = CENTER + rOuter * Math.cos(endAngle); newY = CENTER + rOuter * Math.sin(endAngle); }
+                            else if (ref.point === 'end-bottom') { const rInner = 200 - gThickness/2; newX = CENTER + rInner * Math.cos(endAngle); newY = CENTER + rInner * Math.sin(endAngle); }
+                            else if (ref.point === 'start-outerTop') { const rOuter = 200 + gThickness; newX = CENTER + rOuter * Math.cos(startAngle); newY = CENTER + rOuter * Math.sin(startAngle); }
+                            else if (ref.point === 'start-outerBottom') { const rInner = 200 - gThickness; newX = CENTER + rInner * Math.cos(startAngle); newY = CENTER + rInner * Math.sin(startAngle); }
+                            else if (ref.point === 'end-outerTop') { const rOuter = 200 + gThickness; newX = CENTER + rOuter * Math.cos(endAngle); newY = CENTER + rOuter * Math.sin(endAngle); }
+                            else if (ref.point === 'end-outerBottom') { const rInner = 200 - gThickness; newX = CENTER + rInner * Math.cos(endAngle); newY = CENTER + rInner * Math.sin(endAngle); }
+                        }
+                    }
+
+                    if (newX !== null && newY !== null) {
+                        r[p + 'x'] = newX;
+                        r[p + 'y'] = newY;
+                    }
+                });
+            });
+        }
+
         function drawMap() {
+            updateRecombBindings();
+
             const nameText = inputName.value;
             const totalLength = Number(inputLength.value);
             const thickness = Number(inputThickness.value) || 15;
@@ -878,9 +938,12 @@
             const showPlasmid = inputShowPlasmid.checked;
 
             linearsData.forEach(l => {
-                points.push({x: l.x, y: l.y}); points.push({x: l.x + l.width, y: l.y});
-                points.push({x: l.x, y: l.y - l.thickness/2}); points.push({x: l.x, y: l.y + l.thickness/2});
-                points.push({x: l.x + l.width, y: l.y - l.thickness/2}); points.push({x: l.x + l.width, y: l.y + l.thickness/2});
+                points.push({x: l.x, y: l.y, ref: {type: 'linear', id: l.id, point: 'start-mid'}});
+                points.push({x: l.x + l.width, y: l.y, ref: {type: 'linear', id: l.id, point: 'end-mid'}});
+                points.push({x: l.x, y: l.y - l.thickness/2, ref: {type: 'linear', id: l.id, point: 'start-top'}});
+                points.push({x: l.x, y: l.y + l.thickness/2, ref: {type: 'linear', id: l.id, point: 'start-bottom'}});
+                points.push({x: l.x + l.width, y: l.y - l.thickness/2, ref: {type: 'linear', id: l.id, point: 'end-top'}});
+                points.push({x: l.x + l.width, y: l.y + l.thickness/2, ref: {type: 'linear', id: l.id, point: 'end-bottom'}});
             });
 
             genesData.forEach(gene => {
@@ -893,30 +956,36 @@
                         const startX = l.x + (gene.start / l.bpLength) * l.width;
                         const endX = l.x + (gene.end / l.bpLength) * l.width;
                         const y = l.y;
-                        points.push({x: startX, y: y}); points.push({x: endX, y: y});
-                        points.push({x: startX, y: y - thickness/2}); points.push({x: startX, y: y + thickness/2});
-                        points.push({x: endX, y: y - thickness/2}); points.push({x: endX, y: y + thickness/2});
-                        points.push({x: startX, y: y - thickness}); points.push({x: startX, y: y + thickness});
-                        points.push({x: endX, y: y - thickness}); points.push({x: endX, y: y + thickness});
+                        points.push({x: startX, y: y, ref: {type: 'gene', id: gene.id, point: 'start-mid'}});
+                        points.push({x: endX, y: y, ref: {type: 'gene', id: gene.id, point: 'end-mid'}});
+                        points.push({x: startX, y: y - thickness/2, ref: {type: 'gene', id: gene.id, point: 'start-top'}});
+                        points.push({x: startX, y: y + thickness/2, ref: {type: 'gene', id: gene.id, point: 'start-bottom'}});
+                        points.push({x: endX, y: y - thickness/2, ref: {type: 'gene', id: gene.id, point: 'end-top'}});
+                        points.push({x: endX, y: y + thickness/2, ref: {type: 'gene', id: gene.id, point: 'end-bottom'}});
+                        points.push({x: startX, y: y - thickness, ref: {type: 'gene', id: gene.id, point: 'start-outerTop'}});
+                        points.push({x: startX, y: y + thickness, ref: {type: 'gene', id: gene.id, point: 'start-outerBottom'}});
+                        points.push({x: endX, y: y - thickness, ref: {type: 'gene', id: gene.id, point: 'end-outerTop'}});
+                        points.push({x: endX, y: y + thickness, ref: {type: 'gene', id: gene.id, point: 'end-outerBottom'}});
                     }
                 } else {
                     const startPos = getCoordinates(gene.start, totalLength, 200, CENTER);
                     const endPos = getCoordinates(gene.end, totalLength, 200, CENTER);
-                    points.push(startPos); points.push(endPos);
+                    points.push({x: startPos.x, y: startPos.y, ref: {type: 'gene', id: gene.id, point: 'start-mid'}});
+                    points.push({x: endPos.x, y: endPos.y, ref: {type: 'gene', id: gene.id, point: 'end-mid'}});
                     
                     const startAngle = ((gene.start / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                     const endAngle = ((gene.end / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                     const outerR = 200 + thickness/2; const innerR = 200 - thickness/2;
-                    points.push({x: CENTER + outerR * Math.cos(startAngle), y: CENTER + outerR * Math.sin(startAngle)});
-                    points.push({x: CENTER + innerR * Math.cos(startAngle), y: CENTER + innerR * Math.sin(startAngle)});
-                    points.push({x: CENTER + outerR * Math.cos(endAngle), y: CENTER + outerR * Math.sin(endAngle)});
-                    points.push({x: CENTER + innerR * Math.cos(endAngle), y: CENTER + innerR * Math.sin(endAngle)});
+                    points.push({x: CENTER + outerR * Math.cos(startAngle), y: CENTER + outerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-top'}});
+                    points.push({x: CENTER + innerR * Math.cos(startAngle), y: CENTER + innerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-bottom'}});
+                    points.push({x: CENTER + outerR * Math.cos(endAngle), y: CENTER + outerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-top'}});
+                    points.push({x: CENTER + innerR * Math.cos(endAngle), y: CENTER + innerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-bottom'}});
                     
                     const outerTipR = 200 + thickness; const innerTipR = 200 - thickness;
-                    points.push({x: CENTER + outerTipR * Math.cos(startAngle), y: CENTER + outerTipR * Math.sin(startAngle)});
-                    points.push({x: CENTER + innerTipR * Math.cos(startAngle), y: CENTER + innerTipR * Math.sin(startAngle)});
-                    points.push({x: CENTER + outerTipR * Math.cos(endAngle), y: CENTER + outerTipR * Math.sin(endAngle)});
-                    points.push({x: CENTER + innerTipR * Math.cos(endAngle), y: CENTER + innerTipR * Math.sin(endAngle)});
+                    points.push({x: CENTER + outerTipR * Math.cos(startAngle), y: CENTER + outerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerTop'}});
+                    points.push({x: CENTER + innerTipR * Math.cos(startAngle), y: CENTER + innerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerBottom'}});
+                    points.push({x: CENTER + outerTipR * Math.cos(endAngle), y: CENTER + outerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerTop'}});
+                    points.push({x: CENTER + innerTipR * Math.cos(endAngle), y: CENTER + innerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerBottom'}});
                 }
             });
             return points;
@@ -943,7 +1012,12 @@
             else if (siteBody) { const id = Number(siteBody.getAttribute("data-id")); clearSelection(); selectedSiteId = id; draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { bp: draggingObj.bp }; }
             else if (textBody) { const id = Number(textBody.getAttribute("data-id")); clearSelection(); selectedTextId = id; draggingElement = 'text'; dragMode = 'body'; draggingObj = textsData.find(t => t.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
             else if (linearBody) { const id = Number(linearBody.getAttribute("data-id")); clearSelection(); selectedLinearId = id; draggingElement = 'linear'; dragMode = 'body'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
-            else if (recombBody) { const id = Number(recombBody.getAttribute("data-id")); clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; dragMode = 'body'; draggingObj = recombsData.find(r => r.id === id); dragInitialData = { ...draggingObj }; }
+            else if (recombBody) { 
+                const id = Number(recombBody.getAttribute("data-id")); clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; dragMode = 'body'; 
+                draggingObj = recombsData.find(r => r.id === id); 
+                draggingObj.binds = {p1:null, p2:null, p3:null, p4:null}; // 全体移動時はバインド解除
+                dragInitialData = { ...draggingObj }; 
+            }
             else clearSelection();
             renderSelection(); drawMap();
         });
@@ -970,8 +1044,15 @@
                     let nX = dragInitialData[pointKey + 'x'] + dx;
                     let nY = dragInitialData[pointKey + 'y'] + dy;
                     
+                    draggingObj.binds = draggingObj.binds || {p1:null, p2:null, p3:null, p4:null};
+                    draggingObj.binds[pointKey] = null; // スナップ探す前に一旦クリア
+
                     for (let p of currentSnapPoints) {
-                        if (Math.hypot(p.x - nX, p.y - nY) < 15) { nX = p.x; nY = p.y; break; }
+                        if (Math.hypot(p.x - nX, p.y - nY) < 15) { 
+                            nX = p.x; nY = p.y; 
+                            draggingObj.binds[pointKey] = p.ref; // バインドを記録
+                            break; 
+                        }
                     }
                     
                     draggingObj[pointKey + 'x'] = nX; 
@@ -1040,7 +1121,7 @@
             
             // Ctrl/Cmd + I (Italic Shortcut)
             if ((e.ctrlKey || e.metaKey) && key === 'i') {
-                e.preventDefault();
+                e.preventDefault(); // デフォルトの動作（ブラウザの機能など）をブロック
                 let updated = false;
                 if (selectedGeneId !== null) {
                     const obj = genesData.find(o => o.id === selectedGeneId);
@@ -1052,8 +1133,13 @@
                     const obj = textsData.find(o => o.id === selectedTextId);
                     if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
                 }
-                if (updated) { drawMap(); saveState(); }
-                return;
+                
+                if (updated) { 
+                    renderSelection(); 
+                    drawMap(); 
+                    saveState(); 
+                }
+                return; 
             }
 
             const activeTag = document.activeElement.tagName.toLowerCase();
