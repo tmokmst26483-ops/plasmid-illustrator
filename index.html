@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plasmid Illustrator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: "Helvetica Neue", Arial, sans-serif; background-color: #2b2b2b; overflow: hidden; color: #e0e0e0; }
+        .panel { padding: 20px; background: #333333; box-shadow: 0 0 10px rgba(0,0,0,0.3); overflow-y: auto; z-index: 10; border-right: 1px solid #444; border-left: 1px solid #444; box-sizing: border-box; }
+        #left-toolbox { width: 200px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; border-left: none; }
+        
+        /* Artboard & Canvas Layout */
+        #center-panel { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; background-color: #555555; }
+        #tab-bar { display: flex; background: #222222; padding: 10px 10px 0 10px; gap: 5px; overflow-x: auto; flex-shrink: 0; align-items: flex-end; border-bottom: 1px solid #444; }
+        #center-canvas { flex-grow: 1; display: grid; place-items: center; overflow: auto; padding: 20px; }
+        
+        /* Tab Styles */
+        .tab { padding: 8px 15px; background: #333333; cursor: pointer; border-radius: 6px 6px 0 0; font-size: 13px; font-weight: bold; border: 1px solid #444; border-bottom: none; display: flex; align-items: center; gap: 8px; color: #aaa; transition: background 0.2s; margin-bottom: -1px; white-space: nowrap; }
+        .tab.active { background: #555555; border-color: #555555; border-bottom: 1px solid #555555; color: #90caf9; }
+        .tab:not(.active):hover { background: #444444; }
+        .tab-close { color: #888; cursor: pointer; font-size: 16px; font-weight: bold; line-height: 1; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .tab-close:hover { color: white; background: #f44336; }
+        #btn-add-artboard { padding: 6px 12px; margin-bottom: 5px; background: #333333; color: #ccc; border: 1px dashed #777; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 5px; white-space: nowrap; }
+        #btn-add-artboard:hover { background: #444444; }
+
+        #right-properties { width: 330px; flex-shrink: 0; border-right: none; }
+        
+        button { padding: 10px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background-color: #45a049; }
+        .btn-orange { background-color: #ff9800; }
+        .btn-orange:hover { background-color: #f57c00; }
+        .btn-purple { background-color: #9c27b0; }
+        .btn-purple:hover { background-color: #7b1fa2; }
+        .btn-teal { background-color: #009688; }
+        .btn-teal:hover { background-color: #00796b; }
+        .btn-pink { background-color: #e91e63; }
+        .btn-pink:hover { background-color: #c2185b; }
+        .btn-blue { background-color: #2196F3; }
+        .btn-blue:hover { background-color: #1976D2; }
+        .delete-btn { background-color: #f44336; padding: 5px; font-size: 12px; margin-top: 10px; width: 100%; color: white; border: none; border-radius: 3px; cursor: pointer;}
+        .delete-btn:hover { background-color: #d32f2f; }
+
+        .input-group { margin-bottom: 10px; }
+        .input-group label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; color: #ccc; }
+        .input-group input[type="text"], .input-group input[type="number"], .input-group select { width: 100%; padding: 8px 6px; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; background-color: #222; color: #fff; }
+        
+        .gene-block { border: 1px solid #4a5568; padding: 15px; border-radius: 5px; background-color: #2d3748; border-left: 4px solid #64b5f6; }
+        .site-block { border: 1px solid #7b6140; padding: 15px; border-radius: 5px; background-color: #4a3f35; border-left: 4px solid #ffb74d; }
+        .text-block { border: 1px solid #70507a; padding: 15px; border-radius: 5px; background-color: #44334a; border-left: 4px solid #ba68c8; }
+        .linear-block { border: 1px solid #3c7370; padding: 15px; border-radius: 5px; background-color: #23403f; border-left: 4px solid #4db6ac; }
+        .recomb-block { border: 1px solid #7c465d; padding: 15px; border-radius: 5px; background-color: #4a2c38; border-left: 4px solid #f06292; }
+
+        svg { background-color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.3); touch-action: none; }
+        text { user-select: none; pointer-events: none; }
+        
+        .draggable-gene, .draggable-linear, .draggable-recomb { cursor: grab; }
+        .draggable-gene:active, .draggable-linear:active, .draggable-recomb:active { cursor: grabbing; }
+        .clickable-site { cursor: pointer; }
+        .clickable-site:active { cursor: grabbing; }
+        
+        .resize-handle { cursor: crosshair; opacity: 0; transition: opacity 0.2s ease-in-out; }
+        .resize-handle:hover { r: 8; }
+        .hover-group:hover .resize-handle, .hover-group.selected .resize-handle { opacity: 1; }
+        
+        h3 { color: #eee; }
+        hr { border-top-color: #444 !important; }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; overflow: auto; height: auto; }
+            #left-toolbox { width: 100%; border: none; border-bottom: 1px solid #444; flex-direction: row; flex-wrap: wrap; }
+            #left-toolbox button { flex: 1 1 45%; }
+            #right-properties { width: 100%; border: none; border-top: 1px solid #444; }
+            #center-panel { min-height: 60vh; overflow: visible; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="left-toolbox" class="panel">
+        <h3 style="margin-top: 0; width: 100%;">Tools</h3>
+        <button id="btn-add-gene">+ Add Gene</button>
+        <button id="btn-add-site" class="btn-orange">+ Add Restriction Site</button>
+        <button id="btn-add-linear" class="btn-teal">+ Add Linear DNA</button>
+        <button id="btn-add-recomb" class="btn-pink">+ Add Recombination</button>
+        <button id="btn-add-text" class="btn-purple">+ Add Text</button>
+        
+        <p style="font-size: 11px; color: #aaa; margin-top: 5px; width: 100%;">* Select a Linear DNA first to add items to it.</p>
+        
+        <hr style="width: 100%; border: 0; border-top: 1px solid #444; margin: 15px 0;">
+        
+        <div style="font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #ccc; width: 100%;">Export As:</div>
+        <div style="display: flex; gap: 5px; width: 100%;">
+            <button id="btn-export-svg" class="btn-blue" style="flex: 1; padding: 10px 5px; font-size: 12px;">SVG</button>
+            <button id="btn-export-png" class="btn-blue" style="flex: 1; padding: 10px 5px; font-size: 12px;">PNG</button>
+            <button id="btn-export-jpeg" class="btn-blue" style="flex: 1; padding: 10px 5px; font-size: 12px;">JPEG</button>
+        </div>
+
+        <p style="font-size: 11px; color: #aaa; text-align: left; margin-top: 15px; line-height: 1.6;">
+            <b>Shortcuts:</b><br>
+            Del / Backspace: Delete<br>
+            Ctrl + Z: Undo<br>
+            Ctrl + Shift + Z: Redo<br>
+            Ctrl + I: Italic (斜体)
+        </p>
+    </div>
+
+    <!-- Artboard Layout Container -->
+    <div id="center-panel">
+        <div id="tab-bar">
+            <!-- Tabs will be dynamically rendered here -->
+        </div>
+        <div id="center-canvas">
+            <svg width="800" height="800" id="main-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+    </div>
+
+    <div id="right-properties" class="panel">
+        <h3 style="margin-top: 0;">Property</h3>
+        <div class="input-group">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Circular Plasmid
+                <span style="font-size: 12px; font-weight: normal; color: #ccc;"><input type="checkbox" id="input-show-plasmid" checked> Show</span>
+            </label>
+        </div>
+        <div class="input-group">
+            <label>Plasmid Name</label>
+            <input type="text" id="input-name" value="Untitled Plasmid">
+        </div>
+        <div class="input-group">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Total Length (bp)
+                <span style="font-size: 12px; font-weight: normal; color: #ccc;"><input type="checkbox" id="input-show-length" checked> Show</span>
+            </label>
+            <input type="number" id="input-length" value="5000">
+        </div>
+        <div class="input-group">
+            <label>Gene Thickness</label>
+            <input type="number" id="input-thickness" min="5" max="50">
+        </div>
+        <div class="input-group">
+            <label>Global Font Size</label>
+            <input type="number" id="input-font-size" min="8" max="36">
+        </div>
+        
+        <hr style="margin: 20px 0; border: 0; border-top: 2px dashed #555;">
+        
+        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #eee;">Selected Item</h3>
+        <div id="selection-container"></div>
+    </div>
+
+    <script>
+        const svg = document.getElementById("main-svg");
+        const inputName = document.getElementById("input-name");
+        const inputLength = document.getElementById("input-length");
+        const inputShowLength = document.getElementById("input-show-length"); 
+        const inputShowPlasmid = document.getElementById("input-show-plasmid"); 
+        const inputThickness = document.getElementById("input-thickness");
+        const inputFontSize = document.getElementById("input-font-size"); 
+        const selectionContainer = document.getElementById("selection-container");
+        const btnAddGene = document.getElementById("btn-add-gene");
+        const btnAddSite = document.getElementById("btn-add-site");
+        const btnAddText = document.getElementById("btn-add-text"); 
+        const btnAddLinear = document.getElementById("btn-add-linear"); 
+        const btnAddRecomb = document.getElementById("btn-add-recomb"); 
+        const btnExportSvg = document.getElementById("btn-export-svg");
+        const btnExportPng = document.getElementById("btn-export-png");
+        const btnExportJpeg = document.getElementById("btn-export-jpeg");
+
+        const CENTER = 400;
+
+        // === ARTBOARD MANAGEMENT ===
+        let artboards = [];
+        let activeArtboardId = null;
+        let nextArtboardId = 2;
+
+        // Global variables representing the ACTIVE artboard state
+        let genesData = []; let nextGeneId = 1;
+        let sitesData = []; let nextSiteId = 1;
+        let textsData = []; let nextTextId = 1;
+        let linearsData = []; let nextLinearId = 1;
+        let recombsData = []; let nextRecombId = 1;
+
+        let selectedGeneId = null; let selectedSiteId = null;
+        let selectedTextId = null; let selectedLinearId = null; let selectedRecombId = null;
+
+        let history = []; let historyIndex = -1; let isRestoring = false;
+
+        function saveToCurrentArtboard() {
+            if (activeArtboardId === null) return;
+            const artboard = artboards.find(a => a.id === activeArtboardId);
+            if (!artboard) return;
+            
+            artboard.data = {
+                genes: JSON.parse(JSON.stringify(genesData)),
+                sites: JSON.parse(JSON.stringify(sitesData)),
+                texts: JSON.parse(JSON.stringify(textsData)),
+                linears: JSON.parse(JSON.stringify(linearsData)),
+                recombs: JSON.parse(JSON.stringify(recombsData)),
+                nextGeneId, nextSiteId, nextTextId, nextLinearId, nextRecombId,
+                plasmidName: inputName.value, plasmidLength: inputLength.value,
+                showLength: inputShowLength.checked, showPlasmid: inputShowPlasmid.checked,
+                thickness: inputThickness.value, globalFontSize: inputFontSize.value,
+                history, historyIndex,
+                selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
+            };
+            artboard.title = inputName.value || "Untitled Plasmid";
+        }
+
+        function loadFromArtboard(id) {
+            const artboard = artboards.find(a => a.id === id);
+            if (!artboard) return;
+            
+            activeArtboardId = id;
+            const d = artboard.data;
+            
+            genesData = JSON.parse(JSON.stringify(d.genes));
+            sitesData = JSON.parse(JSON.stringify(d.sites));
+            textsData = JSON.parse(JSON.stringify(d.texts));
+            linearsData = JSON.parse(JSON.stringify(d.linears));
+            recombsData = JSON.parse(JSON.stringify(d.recombs));
+            
+            nextGeneId = d.nextGeneId; nextSiteId = d.nextSiteId;
+            nextTextId = d.nextTextId; nextLinearId = d.nextLinearId; nextRecombId = d.nextRecombId;
+            
+            inputName.value = d.plasmidName; inputLength.value = d.plasmidLength;
+            inputShowLength.checked = d.showLength; 
+            inputShowPlasmid.checked = d.showPlasmid !== undefined ? d.showPlasmid : true;
+            inputThickness.value = d.thickness; inputFontSize.value = d.globalFontSize;
+            
+            history = d.history; historyIndex = d.historyIndex;
+            selectedGeneId = d.selectedGeneId; selectedSiteId = d.selectedSiteId;
+            selectedTextId = d.selectedTextId; selectedLinearId = d.selectedLinearId; selectedRecombId = d.selectedRecombId;
+            
+            if (history.length === 0) saveState(); 
+            
+            renderTabs();
+            renderSelection();
+            drawMap();
+        }
+
+        window.switchArtboard = function(id) {
+            if (id === activeArtboardId) return;
+            saveToCurrentArtboard();
+            loadFromArtboard(id);
+        }
+
+        window.addArtboard = function() {
+            saveToCurrentArtboard();
+            const newId = nextArtboardId++;
+            const newArtboard = {
+                id: newId, title: "New Plasmid",
+                data: {
+                    genes: [], sites: [], texts: [], linears: [], recombs: [],
+                    nextGeneId: 1, nextSiteId: 1, nextTextId: 1, nextLinearId: 1, nextRecombId: 1,
+                    plasmidName: "New Plasmid", plasmidLength: 5000, showLength: true, showPlasmid: true,
+                    thickness: 15, globalFontSize: 14,
+                    history: [], historyIndex: -1,
+                    selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
+                }
+            };
+            artboards.push(newArtboard);
+            loadFromArtboard(newId);
+        }
+
+        window.closeArtboard = function(id) {
+            if (artboards.length <= 1) return; 
+            if (id === activeArtboardId) {
+                const currentIndex = artboards.findIndex(a => a.id === id);
+                const nextTab = artboards[currentIndex - 1] || artboards[currentIndex + 1];
+                loadFromArtboard(nextTab.id);
+            }
+            artboards = artboards.filter(a => a.id !== id);
+            renderTabs();
+        }
+
+        function renderTabs() {
+            const tabBar = document.getElementById("tab-bar");
+            let html = "";
+            artboards.forEach(a => {
+                const isActive = a.id === activeArtboardId ? " active" : "";
+                const title = a.id === activeArtboardId ? (inputName.value || "Untitled Plasmid") : a.title;
+                html += `
+                    <div class="tab${isActive}" onclick="switchArtboard(${a.id})">
+                        ${title}
+                        ${artboards.length > 1 ? `<span class="tab-close" onclick="event.stopPropagation(); closeArtboard(${a.id})">&times;</span>` : ''}
+                    </div>`;
+            });
+            html += `<button id="btn-add-artboard" onclick="addArtboard()">+ New Tab</button>`;
+            tabBar.innerHTML = html;
+        }
+
+        // Initialize First Artboard (真っ新な状態)
+        artboards.push({
+            id: 1, title: "Untitled Plasmid",
+            data: {
+                genes: [],
+                sites: [],
+                texts: [], linears: [], recombs: [],
+                nextGeneId: 1, nextSiteId: 1, nextTextId: 1, nextLinearId: 1, nextRecombId: 1,
+                plasmidName: "Untitled Plasmid", plasmidLength: 5000, showLength: true, showPlasmid: true,
+                thickness: 15, globalFontSize: 14,
+                history: [], historyIndex: -1,
+                selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
+            }
+        });
+
+        function saveState() {
+            if (isRestoring) return; 
+            if (historyIndex < history.length - 1) history = history.slice(0, historyIndex + 1);
+
+            const state = {
+                genes: JSON.parse(JSON.stringify(genesData)), sites: JSON.parse(JSON.stringify(sitesData)),
+                texts: JSON.parse(JSON.stringify(textsData)), linears: JSON.parse(JSON.stringify(linearsData)), recombs: JSON.parse(JSON.stringify(recombsData)),
+                nextGeneId, nextSiteId, nextTextId, nextLinearId, nextRecombId,
+                plasmidName: inputName.value, plasmidLength: inputLength.value, showLength: inputShowLength.checked,
+                showPlasmid: inputShowPlasmid.checked,
+                thickness: inputThickness.value, globalFontSize: inputFontSize.value,
+                selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
+            };
+
+            history.push(state);
+            historyIndex++;
+            if (history.length > 50) { history.shift(); historyIndex--; }
+        }
+
+        function restoreState(index) {
+            if (index < 0 || index >= history.length) return;
+            isRestoring = true;
+            const state = history[index];
+            
+            genesData = JSON.parse(JSON.stringify(state.genes)); sitesData = JSON.parse(JSON.stringify(state.sites));
+            textsData = JSON.parse(JSON.stringify(state.texts)); linearsData = JSON.parse(JSON.stringify(state.linears)); recombsData = JSON.parse(JSON.stringify(state.recombs));
+            
+            nextGeneId = state.nextGeneId; nextSiteId = state.nextSiteId;
+            nextTextId = state.nextTextId; nextLinearId = state.nextLinearId; nextRecombId = state.nextRecombId;
+            
+            inputName.value = state.plasmidName; inputLength.value = state.plasmidLength;
+            inputShowLength.checked = state.showLength; 
+            inputShowPlasmid.checked = state.showPlasmid !== undefined ? state.showPlasmid : true;
+            inputThickness.value = state.thickness; inputFontSize.value = state.globalFontSize;
+            
+            selectedGeneId = state.selectedGeneId; selectedSiteId = state.selectedSiteId;
+            selectedTextId = state.selectedTextId; selectedLinearId = state.selectedLinearId; selectedRecombId = state.selectedRecombId;
+
+            historyIndex = index;
+            renderTabs(); renderSelection(); drawMap(); isRestoring = false;
+        }
+
+        function undo() { if (historyIndex > 0) restoreState(historyIndex - 1); }
+        function redo() { if (historyIndex < history.length - 1) restoreState(historyIndex + 1); }
+
+        function getContrastColor(hexColor) {
+            if (!hexColor || hexColor.length !== 7) return "black";
+            const r = parseInt(hexColor.slice(1, 3), 16); const g = parseInt(hexColor.slice(3, 5), 16); const b = parseInt(hexColor.slice(5, 7), 16);
+            return ((r * 299 + g * 587 + b * 114) / 1000) > 128 ? "black" : "white";
+        }
+
+        function getCoordinates(bp, totalBp, radius, center) {
+            const percent = bp / totalBp;
+            const angle = (percent * 2 * Math.PI) - (Math.PI / 2);
+            return { x: center + radius * Math.cos(angle), y: center + radius * Math.sin(angle) };
+        }
+
+        function renderSelection() {
+            selectionContainer.innerHTML = "";
+            if (selectedGeneId !== null) {
+                const gene = genesData.find(g => g.id === selectedGeneId);
+                if (!gene) return;
+                const targetText = gene.target === "plasmid" ? "Plasmid" : "Linear DNA";
+                const div = document.createElement("div"); div.className = "gene-block";
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #64b5f6; font-weight: bold; margin-bottom: 8px;">Gene (on ${targetText})</div>
+                    <div class="input-group"><input type="text" value="${gene.name}" onchange="saveState()" oninput="updateGene(${gene.id}, 'name', this.value)" style="font-weight: bold;"></div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1;"><label>Start (bp)</label><input type="number" value="${Math.round(gene.start)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'start', this.value)"></div>
+                        <div style="flex: 1;"><label>End (bp)</label><input type="number" value="${Math.round(gene.end)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'end', this.value)"></div>
+                    </div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1;"><label>Shape</label><select onchange="updateGene(${gene.id}, 'shape', this.value); saveState();"><option value="arrow" ${gene.shape === "arrow" ? "selected" : ""}>Arrow</option><option value="box" ${gene.shape === "box" ? "selected" : ""}>Box</option></select></div>
+                        <div style="flex: 1;"><label>Direction</label><select onchange="updateGene(${gene.id}, 'dir', this.value); saveState();" ${gene.shape === "box" ? "disabled" : ""}><option value="forward" ${gene.dir === "forward" ? "selected" : ""}>Forward</option><option value="reverse" ${gene.dir === "reverse" ? "selected" : ""}>Reverse</option></select></div>
+                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${gene.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateGene(${gene.id}, 'fontSize', this.value)"></div>
+                    </div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${gene.color}" onchange="saveState()" oninput="updateGene(${gene.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <div style="flex: 1;"><label style="display: flex; justify-content: space-between; align-items: center;"><span>Text Color</span><span style="font-size: 11px; font-weight: normal;"><input type="checkbox" ${gene.autoTextColor ? "checked" : ""} onchange="updateGene(${gene.id}, 'autoTextColor', this.checked); saveState();"> Auto</span></label><input type="color" value="${gene.textColor}" onchange="saveState()" oninput="updateGene(${gene.id}, 'textColor', this.value)" style="height: 35px; padding: 0;" ${gene.autoTextColor ? "disabled" : ""}></div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteGene(${gene.id})">Delete Gene</button>
+                `;
+                selectionContainer.appendChild(div);
+            } 
+            else if (selectedSiteId !== null) {
+                const site = sitesData.find(s => s.id === selectedSiteId);
+                if (!site) return;
+                const targetText = site.target === "plasmid" ? "Plasmid" : "Linear DNA";
+                const div = document.createElement("div"); div.className = "site-block";
+                const currentOffset = site.textOffset !== undefined ? site.textOffset : 15;
+                const currentLineWidth = site.lineWidth !== undefined ? site.lineWidth : 2;
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #ffb74d; font-weight: bold; margin-bottom: 8px;">Restriction Site (on ${targetText})</div>
+                    <div class="input-group"><label>Enzyme Name</label><input type="text" value="${site.name}" onchange="saveState()" oninput="updateSite(${site.id}, 'name', this.value)" style="font-weight: bold; font-family: sans-serif;"></div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1.1;"><label>Pos (bp)</label><input type="number" value="${Math.round(site.bp)}" onchange="saveState()" oninput="updateSite(${site.id}, 'bp', this.value)"></div>
+                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${site.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateSite(${site.id}, 'fontSize', this.value)"></div>
+                        <div style="flex: 1;"><label>Offset</label><input type="number" value="${currentOffset}" onchange="saveState()" oninput="updateSite(${site.id}, 'textOffset', this.value)"></div>
+                    </div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1.5;"><label>Cut Type</label><select onchange="updateSite(${site.id}, 'cutType', this.value); saveState();"><option value="sticky" ${(!site.cutType || site.cutType === "sticky") ? "selected" : ""}>Sticky ends</option><option value="blunt" ${site.cutType === "blunt" ? "selected" : ""}>Blunt ends</option><option value="none" ${site.cutType === "none" ? "selected" : ""}>None (Hide Line)</option></select></div>
+                        <div style="flex: 1;"><label>Line Width</label><input type="number" value="${currentLineWidth}" onchange="saveState()" oninput="updateSite(${site.id}, 'lineWidth', this.value)" min="1"></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${site.color || '#ff0000'}" onchange="saveState()" oninput="updateSite(${site.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteSite(${site.id})">Delete Site</button>
+                `;
+                selectionContainer.appendChild(div);
+            } 
+            else if (selectedTextId !== null) {
+                const t = textsData.find(x => x.id === selectedTextId);
+                if (!t) return;
+                const div = document.createElement("div"); div.className = "text-block";
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #ba68c8; font-weight: bold; margin-bottom: 8px;">Free Text</div>
+                    <div class="input-group"><label>Text Content</label><input type="text" value="${t.text}" onchange="saveState()" oninput="updateText(${t.id}, 'text', this.value)"></div>
+                    <div class="input-group" style="display: flex; gap: 10px;">
+                        <div style="flex: 1;"><label>Font Size</label><input type="number" value="${t.fontSize}" onchange="saveState()" oninput="updateText(${t.id}, 'fontSize', this.value)"></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${t.color}" onchange="saveState()" oninput="updateText(${t.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteText(${t.id})">Delete Text</button>
+                `;
+                selectionContainer.appendChild(div);
+            }
+            else if (selectedLinearId !== null) {
+                const l = linearsData.find(x => x.id === selectedLinearId);
+                if (!l) return;
+                const div = document.createElement("div"); div.className = "linear-block";
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #4db6ac; font-weight: bold; margin-bottom: 8px;">Linear DNA</div>
+                    <div class="input-group"><label>Name</label><input type="text" value="${l.name}" onchange="saveState()" oninput="updateLinear(${l.id}, 'name', this.value)"></div>
+                    <div class="input-group" style="display: flex; gap: 10px;">
+                        <div style="flex: 1.2;"><label>Total bp</label><input type="number" value="${l.bpLength}" onchange="saveState()" oninput="updateLinear(${l.id}, 'bpLength', this.value)"></div>
+                        <div style="flex: 1;"><label>Width (px)</label><input type="number" value="${l.width}" onchange="saveState()" oninput="updateLinear(${l.id}, 'width', this.value)"></div>
+                        <div style="flex: 1;"><label>Thickness</label><input type="number" value="${l.thickness}" onchange="saveState()" oninput="updateLinear(${l.id}, 'thickness', this.value)"></div>
+                    </div>
+                    <div class="input-group"><label>Color</label><input type="color" value="${l.color}" onchange="saveState()" oninput="updateLinear(${l.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                    <button class="delete-btn" onclick="deleteLinear(${l.id})">Delete Linear DNA</button>
+                `;
+                selectionContainer.appendChild(div);
+            }
+            else if (selectedRecombId !== null) {
+                const r = recombsData.find(x => x.id === selectedRecombId);
+                if (!r) return;
+                const div = document.createElement("div"); div.className = "recomb-block";
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #f06292; font-weight: bold; margin-bottom: 8px;">Recombination</div>
+                    <div class="input-group" style="display: flex; gap: 10px;">
+                        <div style="flex: 2;"><label>Type</label><select onchange="updateRecomb(${r.id}, 'type', this.value); saveState();"><option value="polygon" ${r.type === "polygon" ? "selected" : ""}>Polygon (Highlight)</option><option value="cross" ${r.type === "cross" ? "selected" : ""}>Cross (X-Lines)</option></select></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${r.color}" onchange="saveState()" oninput="updateRecomb(${r.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                    </div>
+                    <p style="font-size: 11px; color: #aaa; margin-top: 5px;">Drag the 4 corner handles on the canvas to connect regions.</p>
+                    <button class="delete-btn" onclick="deleteRecomb(${r.id})">Delete Recombination</button>
+                `;
+                selectionContainer.appendChild(div);
+            }
+            else {
+                selectionContainer.innerHTML = '<p style="color: #aaa; font-size: 13px; line-height: 1.5; padding: 10px; background: #222; border-radius: 5px; border: 1px solid #444;">Click an object on the canvas to view properties.</p>';
+            }
+        }
+
+        function updateGene(id, key, value) { const obj = genesData.find(o => o.id === id); if (obj) { if (key === 'start' || key === 'end') obj[key] = Number(value); else if (key === 'fontSize') obj[key] = value === '' ? '' : Number(value); else obj[key] = value; if (key === 'shape' || key === 'autoTextColor') renderSelection(); drawMap(); } }
+        function updateSite(id, key, value) { const obj = sitesData.find(o => o.id === id); if (obj) { if (key === 'bp' || key === 'textOffset' || key === 'lineWidth') obj[key] = Number(value); else if (key === 'fontSize') obj[key] = value === '' ? '' : Number(value); else obj[key] = value; drawMap(); } }
+        function updateText(id, key, value) { const obj = textsData.find(o => o.id === id); if (obj) { obj[key] = (key === 'fontSize' || key === 'x' || key === 'y') ? Number(value) : value; drawMap(); } }
+        function updateLinear(id, key, value) { const obj = linearsData.find(o => o.id === id); if (obj) { obj[key] = (key === 'width' || key === 'thickness' || key === 'bpLength') ? Number(value) : value; drawMap(); } }
+        function updateRecomb(id, key, value) { const obj = recombsData.find(o => o.id === id); if (obj) { obj[key] = value; drawMap(); } }
+
+        window.deleteGene = function(id) { genesData = genesData.filter(g => g.id !== id); if (selectedGeneId === id) selectedGeneId = null; renderSelection(); drawMap(); saveState(); };
+        window.deleteSite = function(id) { sitesData = sitesData.filter(s => s.id !== id); if (selectedSiteId === id) selectedSiteId = null; renderSelection(); drawMap(); saveState(); };
+        window.deleteText = function(id) { textsData = textsData.filter(t => t.id !== id); if (selectedTextId === id) selectedTextId = null; renderSelection(); drawMap(); saveState(); };
+        window.deleteLinear = function(id) { 
+            linearsData = linearsData.filter(l => l.id !== id);
+            genesData = genesData.filter(g => g.target !== "linear_" + id); 
+            sitesData = sitesData.filter(s => s.target !== "linear_" + id);
+            if (selectedLinearId === id) selectedLinearId = null; 
+            renderSelection(); drawMap(); saveState(); 
+        };
+        window.deleteRecomb = function(id) { recombsData = recombsData.filter(r => r.id !== id); if (selectedRecombId === id) selectedRecombId = null; renderSelection(); drawMap(); saveState(); };
+
+        function clearSelection() { selectedGeneId = null; selectedSiteId = null; selectedTextId = null; selectedLinearId = null; selectedRecombId = null; }
+
+        btnAddGene.addEventListener("click", () => {
+            const newId = nextGeneId++;
+            let target = "plasmid", start = 0, end = 500;
+            if (selectedLinearId !== null) {
+                target = "linear_" + selectedLinearId;
+                const l = linearsData.find(x => x.id === selectedLinearId);
+                start = l ? l.bpLength * 0.1 : 0;
+                end = l ? l.bpLength * 0.3 : 500;
+            } else if (!inputShowPlasmid.checked) {
+                if (linearsData.length > 0) {
+                    target = "linear_" + linearsData[0].id;
+                    start = linearsData[0].bpLength * 0.1;
+                    end = linearsData[0].bpLength * 0.3;
+                } else {
+                    alert("Please select a Linear DNA first, or turn on 'Circular Plasmid'.");
+                    return;
+                }
+            }
+            genesData.push({ id: newId, target, name: "New Gene", start, end, dir: "forward", shape: "arrow", color: "#2196F3", autoTextColor: true, textColor: "#ffffff", fontSize: "", isItalic: false });
+            clearSelection(); selectedGeneId = newId; renderSelection(); drawMap(); saveState();
+        });
+
+        btnAddSite.addEventListener("click", () => {
+            const newId = nextSiteId++;
+            let target = "plasmid", bp = 0;
+            if (selectedLinearId !== null) {
+                target = "linear_" + selectedLinearId;
+                const l = linearsData.find(x => x.id === selectedLinearId);
+                bp = l ? l.bpLength * 0.5 : 500;
+            } else if (!inputShowPlasmid.checked) {
+                if (linearsData.length > 0) {
+                    target = "linear_" + linearsData[0].id;
+                    bp = linearsData[0].bpLength * 0.5;
+                } else {
+                    alert("Please select a Linear DNA first, or turn on 'Circular Plasmid'.");
+                    return;
+                }
+            }
+            sitesData.push({ id: newId, target, name: "New Site", bp, fontSize: "", color: "#ff0000", cutType: "sticky", textOffset: 15, lineWidth: 2, isItalic: false });
+            clearSelection(); selectedSiteId = newId; renderSelection(); drawMap(); saveState();
+        });
+
+        btnAddText.addEventListener("click", () => {
+            const newId = nextTextId++;
+            textsData.push({ id: newId, text: "Sample Text", x: CENTER, y: CENTER - 100, fontSize: 16, color: "#000000", isItalic: false });
+            clearSelection(); selectedTextId = newId; renderSelection(); drawMap(); saveState();
+        });
+
+        btnAddLinear.addEventListener("click", () => {
+            const newId = nextLinearId++;
+            linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: CENTER - 200, y: CENTER + 250, width: 400, thickness: 8, color: "#9E9E9E" });
+            clearSelection(); selectedLinearId = newId; renderSelection(); drawMap(); saveState();
+        });
+
+        btnAddRecomb.addEventListener("click", () => {
+            const newId = nextRecombId++;
+            recombsData.push({ id: newId, type: "polygon", color: "#2196F3", p1x: CENTER - 150, p1y: CENTER + 130, p2x: CENTER + 150, p2y: CENTER + 130, p3x: CENTER + 150, p3y: CENTER + 250, p4x: CENTER - 150, p4y: CENTER + 250 });
+            clearSelection(); selectedRecombId = newId; renderSelection(); drawMap(); saveState();
+        });
+
+        // 共通のクリーンアップ処理（エクスポート用）
+        function getCleanSvgString() {
+            const clonedSvg = svg.cloneNode(true);
+            clonedSvg.querySelectorAll('.resize-handle').forEach(h => h.remove());
+            clonedSvg.querySelectorAll('.hit-area').forEach(h => h.remove());
+            clonedSvg.querySelectorAll('.draggable-text text, .clickable-site text').forEach(t => { 
+                t.removeAttribute('stroke'); 
+                t.removeAttribute('stroke-width'); 
+                t.removeAttribute('stroke-dasharray'); 
+            });
+
+            // 背景色を白にするためのrect要素を最背面に追加
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("width", "100%");
+            rect.setAttribute("height", "100%");
+            rect.setAttribute("fill", "white");
+            clonedSvg.insertBefore(rect, clonedSvg.firstChild);
+
+            return clonedSvg.outerHTML;
+        }
+
+        // SVGエクスポート
+        btnExportSvg.addEventListener("click", () => {
+            const svgString = getCleanSvgString();
+            const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url; link.download = (inputName.value || "Untitled_Plasmid") + ".svg";
+            document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+        });
+
+        // Canvasを用いた画像（PNG/JPEG）エクスポート
+        function exportImage(format) {
+            const svgString = getCleanSvgString();
+            const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement("canvas");
+                // SVGに指定されているwidth, heightを使用
+                canvas.width = svg.getAttribute("width") || 800;
+                canvas.height = svg.getAttribute("height") || 800;
+                const ctx = canvas.getContext("2d");
+                
+                // SVGを描画
+                ctx.drawImage(img, 0, 0);
+                
+                // ダウンロード処理
+                const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+                const dataUrl = canvas.toDataURL(mimeType);
+                const link = document.createElement("a");
+                link.href = dataUrl;
+                link.download = (inputName.value || "Untitled_Plasmid") + "." + format;
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+            img.src = url;
+        }
+
+        btnExportPng.addEventListener("click", () => exportImage('png'));
+        btnExportJpeg.addEventListener("click", () => exportImage('jpeg'));
+
+        function drawMap() {
+            const nameText = inputName.value;
+            const totalLength = Number(inputLength.value);
+            const thickness = Number(inputThickness.value) || 15;
+            const globalFontSize = Number(inputFontSize.value) || 14; 
+            const showLength = inputShowLength.checked; 
+            const showPlasmid = inputShowPlasmid.checked;
+            svg.innerHTML = ""; 
+
+            let allDefsHTML = "<defs>";
+            let circleHTML = "";
+            let nameTextHTML = "";
+            let lengthTextHTML = "";
+
+            if (showPlasmid) {
+                circleHTML = `<circle cx="${CENTER}" cy="${CENTER}" r="200" fill="none" stroke="black" stroke-width="2" />`;
+                const nameY = showLength ? CENTER - 10 : CENTER;
+                nameTextHTML = `<text x="${CENTER}" y="${nameY}" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="black" dy="0.35em">${nameText}</text>`;
+                lengthTextHTML = showLength ? `<text x="${CENTER}" y="${CENTER + 25}" font-family="sans-serif" font-size="20" text-anchor="middle" fill="black">${totalLength} bp</text>` : "";
+            }
+            
+            let allGenesHTML = ""; let allSitesHTML = ""; let allTextsHTML = ""; 
+            let allLinearsHTML = ""; let allRecombsHTML = "";
+
+            recombsData.forEach(r => {
+                const isSelected = (r.id === selectedRecombId) ? " selected" : "";
+                let rHTML = "";
+                if (r.type === "polygon") rHTML = `<polygon points="${r.p1x},${r.p1y} ${r.p2x},${r.p2y} ${r.p3x},${r.p3y} ${r.p4x},${r.p4y}" fill="${r.color}" fill-opacity="0.2" stroke="${r.color}" stroke-opacity="0.5" stroke-width="1" />`;
+                else rHTML = `<line x1="${r.p1x}" y1="${r.p1y}" x2="${r.p3x}" y2="${r.p3y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" /><line x1="${r.p2x}" y1="${r.p2y}" x2="${r.p4x}" y2="${r.p4y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" />`;
+                const hitPolygon = `<polygon class="hit-area" points="${r.p1x},${r.p1y} ${r.p2x},${r.p2y} ${r.p3x},${r.p3y} ${r.p4x},${r.p4y}" fill="transparent" style="pointer-events: all; cursor: grab;" />`;
+                const h1 = `<circle cx="${r.p1x}" cy="${r.p1y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p1" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
+                const h2 = `<circle cx="${r.p2x}" cy="${r.p2y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p2" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
+                const h3 = `<circle cx="${r.p3x}" cy="${r.p3y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p3" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
+                const h4 = `<circle cx="${r.p4x}" cy="${r.p4y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p4" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
+                allRecombsHTML += `<g class="hover-group draggable-recomb${isSelected}" data-id="${r.id}">${hitPolygon}${rHTML}${h1}${h2}${h3}${h4}</g>`;
+            });
+
+            linearsData.forEach(l => {
+                const isSelected = (l.id === selectedLinearId) ? " selected" : "";
+                const lineHTML = `<line class="hit-area" x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="transparent" stroke-width="${Math.max(15, l.thickness + 10)}" style="pointer-events: all; cursor: grab;" /><line x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="${l.color}" stroke-width="${l.thickness}" stroke-linecap="round" style="pointer-events: none;" />`;
+                const textHTML = `<text x="${l.x - 10}" y="${l.y}" font-family="sans-serif" font-size="${globalFontSize}" font-weight="bold" fill="black" text-anchor="end" dominant-baseline="middle" style="pointer-events: none;">${l.name}</text>`;
+                const hLeft = `<circle cx="${l.x}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-start" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
+                const hRight = `<circle cx="${l.x + l.width}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-end" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
+                allLinearsHTML += `<g class="hover-group draggable-linear${isSelected}" data-id="${l.id}">${lineHTML}${textHTML}${hLeft}${hRight}</g>`;
+            });
+
+            genesData.forEach(gene => {
+                if (gene.target === "plasmid" && !showPlasmid) return;
+
+                const isSelected = (gene.id === selectedGeneId) ? " selected" : "";
+                const finalTextColor = gene.autoTextColor ? getContrastColor(gene.color) : gene.textColor;
+                const finalFontSize = gene.fontSize || globalFontSize;
+                const fontStyle = gene.isItalic ? 'font-style="italic"' : '';
+                
+                if (gene.target && gene.target.startsWith("linear_")) {
+                    const lId = parseInt(gene.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (!l) return;
+
+                    const startX = l.x + (gene.start / l.bpLength) * l.width;
+                    const endX = l.x + (gene.end / l.bpLength) * l.width;
+                    const y = l.y;
+                    
+                    let elementHTML = "";
+                    if (gene.shape === "box") {
+                        elementHTML = `<line x1="${startX}" y1="${y}" x2="${endX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                    } else {
+                        let leftX = Math.min(startX, endX);
+                        let rightX = Math.max(startX, endX);
+                        let headSize = thickness * 1.5;
+                        let dist = rightX - leftX;
+                        if (headSize > dist) headSize = dist; 
+                        
+                        let bodyHTML = "", headHTML = "";
+                        const headTopY = y - thickness; 
+                        const headBotY = y + thickness;
+
+                        if (gene.dir === "forward") {
+                            let bodyEndX = rightX - headSize;
+                            bodyHTML = `<line x1="${leftX}" y1="${y}" x2="${bodyEndX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                            headHTML = `<polygon points="${rightX},${y} ${bodyEndX},${headTopY} ${bodyEndX},${headBotY}" fill="${gene.color}" />`;
+                        } else {
+                            let bodyEndX = leftX + headSize;
+                            bodyHTML = `<line x1="${rightX}" y1="${y}" x2="${bodyEndX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                            headHTML = `<polygon points="${leftX},${y} ${bodyEndX},${headTopY} ${bodyEndX},${headBotY}" fill="${gene.color}" />`;
+                        }
+                        elementHTML = bodyHTML + headHTML;
+                    }
+                    
+                    const midX = (startX + endX) / 2;
+                    const geneLabelHTML = `<text x="${midX}" y="${y}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dominant-baseline="middle">${gene.name}</text>`;
+                    const startHandleHTML = `<circle cx="${startX}" cy="${y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="start" fill="white" stroke="${gene.color}" stroke-width="2" />`;
+                    const endHandleHTML = `<circle cx="${endX}" cy="${y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="end" fill="white" stroke="${gene.color}" stroke-width="2" />`;
+                    
+                    allLinearsHTML += `<g class="hover-group${isSelected}"><g class="draggable-gene" data-id="${gene.id}" data-type="body">${elementHTML}${geneLabelHTML}</g>${startHandleHTML}${endHandleHTML}</g>`;
+                } 
+                else {
+                    let elementHTML = ""; let visualStartPos, visualEndPos; 
+                    if (gene.shape === "box") {
+                        visualStartPos = getCoordinates(gene.start, totalLength, 200, CENTER);
+                        visualEndPos = getCoordinates(gene.end, totalLength, 200, CENTER);
+                        let distance = gene.end - gene.start; if (distance < 0) distance += totalLength;
+                        const largeArcFlag = distance > (totalLength / 2) ? 1 : 0;
+                        elementHTML = `<path d="M ${visualStartPos.x} ${visualStartPos.y} A 200 200 0 ${largeArcFlag} 1 ${visualEndPos.x} ${visualEndPos.y}" fill="none" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                    } else {
+                        let dist = (gene.dir === "forward") ? (gene.end - gene.start) : (gene.start - gene.end);
+                        if (dist < 0) dist += totalLength; 
+                        const arrowLengthPx = thickness * 1.5; const circumference = 2 * Math.PI * 200;
+                        let arrowHeadSize = (arrowLengthPx / circumference) * totalLength; if (dist < arrowHeadSize) arrowHeadSize = dist; 
+                        let overlapBp = (thickness * 0.5 / circumference) * totalLength; if (overlapBp > arrowHeadSize * 0.8) overlapBp = arrowHeadSize * 0.8; 
+
+                        let bodyStart, bodyEnd, sweepFlag, trueEndBp, arcEndBp;
+                        if (gene.dir === "forward") {
+                            bodyStart = gene.start; bodyEnd = (gene.end - arrowHeadSize + totalLength) % totalLength; 
+                            arcEndBp = (bodyEnd + overlapBp) % totalLength; sweepFlag = 1; trueEndBp = gene.end;
+                        } else {
+                            bodyStart = gene.end; bodyEnd = (gene.start + arrowHeadSize) % totalLength; 
+                            arcEndBp = (bodyEnd - overlapBp + totalLength) % totalLength; sweepFlag = 0; trueEndBp = gene.start;
+                        }
+
+                        const startPos = getCoordinates(bodyStart, totalLength, 200, CENTER);
+                        const bodyEndPos = getCoordinates(bodyEnd, totalLength, 200, CENTER);
+                        const arcEndPos = getCoordinates(arcEndBp, totalLength, 200, CENTER);
+                        let arcDistance = (gene.dir === "forward") ? (arcEndBp - bodyStart) : (bodyStart - arcEndBp);
+                        if (arcDistance < 0) arcDistance += totalLength; const largeArcFlag = arcDistance > (totalLength / 2) ? 1 : 0;
+                        
+                        const bodyHTML = `<path d="M ${startPos.x} ${startPos.y} A 200 200 0 ${largeArcFlag} ${sweepFlag} ${arcEndPos.x} ${arcEndPos.y}" fill="none" stroke="${gene.color}" stroke-width="${thickness}" />`;
+                        const tipPos = getCoordinates(trueEndBp, totalLength, 200, CENTER);
+                        let dx = tipPos.x - bodyEndPos.x; let dy = tipPos.y - bodyEndPos.y; let vectorLength = Math.sqrt(dx * dx + dy * dy);
+                        if (vectorLength === 0) { dx = 1; dy = 0; vectorLength = 1; }
+                        const wx = -dy / vectorLength; const wy = dx / vectorLength;
+                        const innerPos = { x: bodyEndPos.x + wx * thickness, y: bodyEndPos.y + wy * thickness };
+                        const outerPos = { x: bodyEndPos.x - wx * thickness, y: bodyEndPos.y - wy * thickness };
+                        
+                        const headHTML = `<polygon points="${tipPos.x},${tipPos.y} ${innerPos.x},${innerPos.y} ${outerPos.x},${outerPos.y}" fill="${gene.color}" />`;
+                        elementHTML = bodyHTML + headHTML;
+                        if (gene.dir === "forward") { visualStartPos = getCoordinates(gene.start, totalLength, 200, CENTER); visualEndPos = tipPos; } 
+                        else { visualStartPos = tipPos; visualEndPos = getCoordinates(gene.end, totalLength, 200, CENTER); }
+                    }
+
+                    let midBp = (gene.start + gene.end) / 2;
+                    if (gene.start > gene.end) midBp += totalLength / 2; midBp = midBp % totalLength;
+                    let percent = midBp / totalLength; let startPercent, endPercent, pathSweepFlag;
+                    if (percent > 0.25 && percent < 0.75) { startPercent = percent + 0.24; endPercent = percent - 0.24; pathSweepFlag = 0; } 
+                    else { startPercent = percent - 0.24; endPercent = percent + 0.24; pathSweepFlag = 1; }
+
+                    let startAngle = (startPercent * 2 * Math.PI) - (Math.PI / 2); let endAngle = (endPercent * 2 * Math.PI) - (Math.PI / 2);
+                    let startX = CENTER + 200 * Math.cos(startAngle); let startY = CENTER + 200 * Math.sin(startAngle);
+                    let endX = CENTER + 200 * Math.cos(endAngle); let endY = CENTER + 200 * Math.sin(endAngle);
+                    
+                    let textPathId = `textPath-gene-${gene.id}`;
+                    allDefsHTML += `<path id="${textPathId}" d="M ${startX} ${startY} A 200 200 0 0 ${pathSweepFlag} ${endX} ${endY}" />`;
+                    const geneLabelHTML = `<text font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em"><textPath href="#${textPathId}" startOffset="50%">${gene.name}</textPath></text>`;
+                    const startHandleHTML = `<circle cx="${visualStartPos.x}" cy="${visualStartPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="start" fill="white" stroke="${gene.color}" stroke-width="2" />`;
+                    const endHandleHTML = `<circle cx="${visualEndPos.x}" cy="${visualEndPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="end" fill="white" stroke="${gene.color}" stroke-width="2" />`;
+                    allGenesHTML += `<g class="hover-group${isSelected}"><g class="draggable-gene" data-id="${gene.id}" data-type="body">${elementHTML}${geneLabelHTML}</g>${startHandleHTML}${endHandleHTML}</g>`;
+                }
+            });
+
+            sitesData.forEach(site => {
+                if (site.target === "plasmid" && !showPlasmid) return;
+
+                const isSelected = (site.id === selectedSiteId) ? " selected" : "";
+                const finalFontSize = site.fontSize || globalFontSize;
+                const fontStyle = site.isItalic ? 'font-style="italic"' : '';
+                const siteColor = site.color || "#ff0000";
+                let cutLineWidth = site.lineWidth !== undefined ? site.lineWidth : Math.max(2, thickness * 0.12);
+                const hitAreaWidth = Math.max(12, cutLineWidth + 10);
+                let userOffset = site.textOffset !== undefined ? site.textOffset : 15;
+                if (site.cutType === "none" && site.textOffset === undefined) userOffset = 5; 
+
+                // 直線上に描画
+                if (site.target && site.target.startsWith("linear_")) {
+                    const lId = parseInt(site.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (!l) return;
+
+                    const posX = l.x + (site.bp / l.bpLength) * l.width;
+                    const y = l.y;
+                    
+                    let lineProtrusion = site.cutType === "none" ? 0 : Math.max(10, thickness * 0.4);
+                    let topY = y - (thickness / 2) - lineProtrusion;
+                    let botY = y + (thickness / 2) + lineProtrusion;
+                    
+                    let pathD = `M ${posX} ${topY} L ${posX} ${botY}`;
+                    if (site.cutType === "sticky") {
+                        let offsetPx = Math.max(6, thickness * 0.3);
+                        pathD = `M ${posX} ${topY} L ${posX} ${y} L ${posX + offsetPx} ${y} L ${posX + offsetPx} ${botY}`;
+                    }
+
+                    const visibleLineHTML = (site.cutType !== "none") ? `<path d="${pathD}" fill="none" stroke="${siteColor}" stroke-width="${cutLineWidth}" style="pointer-events: none;" />` : "";
+                    const lineHTML = `<path class="hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${hitAreaWidth}" style="pointer-events: all; cursor: grab;" />${visibleLineHTML}`;
+
+                    let textY = topY - userOffset;
+                    const textHTML = `
+                        <text class="hit-area" x="${posX}" y="${textY}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="middle" style="pointer-events: all; cursor: grab;">${site.name}</text>
+                        <text x="${posX}" y="${textY}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="middle" style="pointer-events: none;">${site.name}</text>
+                    `;
+                    const handleHTML = `<circle cx="${posX}" cy="${topY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
+                    allLinearsHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
+                }
+                // 円上に描画
+                else {
+                    let angleDeg = (site.bp / totalLength) * 360 - 90; let theta = angleDeg * (Math.PI / 180);
+                    let pathD = ""; let outX, outY;
+                    let lineProtrusion = site.cutType === "none" ? 0 : Math.max(10, thickness * 0.4); 
+                    let outerR = 200 + (thickness / 2) + lineProtrusion; let innerR = 200 - (thickness / 2) - lineProtrusion; 
+                    
+                    if (site.cutType === "blunt" || site.cutType === "none") {
+                        outX = CENTER + outerR * Math.cos(theta); outY = CENTER + outerR * Math.sin(theta);
+                        let inX = CENTER + innerR * Math.cos(theta); let inY = CENTER + innerR * Math.sin(theta);
+                        pathD = `M ${outX} ${outY} L ${inX} ${inY}`;
+                    } else {
+                        let offsetPx = Math.max(6, thickness * 0.3); let offsetRad = offsetPx / 200; 
+                        let t1 = theta - offsetRad; let t2 = theta + offsetRad;
+                        outX = CENTER + outerR * Math.cos(t1); outY = CENTER + outerR * Math.sin(t1);
+                        let p2x = CENTER + 200 * Math.cos(t1); let p2y = CENTER + 200 * Math.sin(t1);
+                        let p3x = CENTER + 200 * Math.cos(t2); let p3y = CENTER + 200 * Math.sin(t2);
+                        let p4x = CENTER + innerR * Math.cos(t2); let p4y = CENTER + innerR * Math.sin(t2);
+                        pathD = `M ${outX} ${outY} L ${p2x} ${p2y} A 200 200 0 0 1 ${p3x} ${p3y} L ${p4x} ${p4y}`;
+                    }
+
+                    const visibleLineHTML = (site.cutType !== "none") ? `<path d="${pathD}" fill="none" stroke="${siteColor}" stroke-width="${cutLineWidth}" style="pointer-events: none;" />` : "";
+                    const lineHTML = `<path class="hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${hitAreaWidth}" style="pointer-events: all; cursor: grab;" />${visibleLineHTML}`;
+
+                    const textRadius = outerR + userOffset; const textPos = getCoordinates(site.bp, totalLength, textRadius, CENTER); 
+                    let textRotation = angleDeg; let anchor = "start"; let normalizedAngle = ((angleDeg % 360) + 360) % 360;
+                    if (normalizedAngle > 90 && normalizedAngle < 270) { textRotation += 180; anchor = "end"; }
+                    
+                    const textHTML = `
+                        <text class="hit-area" x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="${anchor}" dy="0.35em" style="pointer-events: all; cursor: grab;">${site.name}</text>
+                        <text x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="${anchor}" dy="0.35em" style="pointer-events: none;">${site.name}</text>
+                    `;
+                    const handleHTML = `<circle cx="${outX}" cy="${outY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
+                    allSitesHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
+                }
+            });
+
+            textsData.forEach(t => {
+                const isSelected = (t.id === selectedTextId);
+                const fontStyle = t.isItalic ? 'font-style="italic"' : '';
+                const strokeProps = isSelected ? `stroke="#9c27b0" stroke-width="1" stroke-dasharray="3,3"` : "";
+                allTextsHTML += `
+                    <g class="draggable-text" data-id="${t.id}">
+                        <text class="hit-area" x="${t.x}" y="${t.y}" font-family="sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="transparent" stroke="transparent" stroke-width="15" text-anchor="middle" dominant-baseline="middle" style="pointer-events: all; cursor: grab;">${t.text}</text>
+                        <text x="${t.x}" y="${t.y}" font-family="sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="${t.color}" text-anchor="middle" dominant-baseline="middle" ${strokeProps} style="pointer-events: none;">${t.text}</text>
+                    </g>
+                `;
+            });
+
+            allDefsHTML += "</defs>"; 
+            svg.innerHTML = allDefsHTML + circleHTML + allRecombsHTML + allLinearsHTML + allGenesHTML + allSitesHTML + nameTextHTML + lengthTextHTML + allTextsHTML;
+        }
+
+        // === Drag & Snap Logic (Pointer Events) ===
+        let draggingElement = null; dragMode = null; let draggingObj = null;
+        let dragStartAngle = 0; let dragInitialData = null; let dragInitialMouse = {x: 0, y: 0};
+        let currentSnapPoints = []; 
+
+        function getAngleFromMouse(e) {
+            const rect = svg.getBoundingClientRect(); const x = (e.clientX - rect.left) - CENTER; const y = (e.clientY - rect.top) - CENTER;
+            let angle = Math.atan2(y, x) + (Math.PI / 2); if (angle < 0) angle += 2 * Math.PI; return angle;
+        }
+
+        function getSnapPoints() {
+            let points = [];
+            const thickness = Number(inputThickness.value) || 15;
+            const totalLength = Number(inputLength.value);
+            const showPlasmid = inputShowPlasmid.checked;
+
+            linearsData.forEach(l => {
+                points.push({x: l.x, y: l.y}); points.push({x: l.x + l.width, y: l.y});
+                points.push({x: l.x, y: l.y - l.thickness/2}); points.push({x: l.x, y: l.y + l.thickness/2});
+                points.push({x: l.x + l.width, y: l.y - l.thickness/2}); points.push({x: l.x + l.width, y: l.y + l.thickness/2});
+            });
+
+            genesData.forEach(gene => {
+                if (gene.target === "plasmid" && !showPlasmid) return;
+
+                if (gene.target && gene.target.startsWith("linear_")) {
+                    const lId = parseInt(gene.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (l) {
+                        const startX = l.x + (gene.start / l.bpLength) * l.width;
+                        const endX = l.x + (gene.end / l.bpLength) * l.width;
+                        const y = l.y;
+                        points.push({x: startX, y: y}); points.push({x: endX, y: y});
+                        points.push({x: startX, y: y - thickness/2}); points.push({x: startX, y: y + thickness/2});
+                        points.push({x: endX, y: y - thickness/2}); points.push({x: endX, y: y + thickness/2});
+                        points.push({x: startX, y: y - thickness}); points.push({x: startX, y: y + thickness});
+                        points.push({x: endX, y: y - thickness}); points.push({x: endX, y: y + thickness});
+                    }
+                } else {
+                    const startPos = getCoordinates(gene.start, totalLength, 200, CENTER);
+                    const endPos = getCoordinates(gene.end, totalLength, 200, CENTER);
+                    points.push(startPos); points.push(endPos);
+                    
+                    const startAngle = ((gene.start / totalLength) * 2 * Math.PI) - (Math.PI / 2);
+                    const endAngle = ((gene.end / totalLength) * 2 * Math.PI) - (Math.PI / 2);
+                    const outerR = 200 + thickness/2; const innerR = 200 - thickness/2;
+                    points.push({x: CENTER + outerR * Math.cos(startAngle), y: CENTER + outerR * Math.sin(startAngle)});
+                    points.push({x: CENTER + innerR * Math.cos(startAngle), y: CENTER + innerR * Math.sin(startAngle)});
+                    points.push({x: CENTER + outerR * Math.cos(endAngle), y: CENTER + outerR * Math.sin(endAngle)});
+                    points.push({x: CENTER + innerR * Math.cos(endAngle), y: CENTER + innerR * Math.sin(endAngle)});
+                    
+                    const outerTipR = 200 + thickness; const innerTipR = 200 - thickness;
+                    points.push({x: CENTER + outerTipR * Math.cos(startAngle), y: CENTER + outerTipR * Math.sin(startAngle)});
+                    points.push({x: CENTER + innerTipR * Math.cos(startAngle), y: CENTER + innerTipR * Math.sin(startAngle)});
+                    points.push({x: CENTER + outerTipR * Math.cos(endAngle), y: CENTER + outerTipR * Math.sin(endAngle)});
+                    points.push({x: CENTER + innerTipR * Math.cos(endAngle), y: CENTER + innerTipR * Math.sin(endAngle)});
+                }
+            });
+            return points;
+        }
+
+        // Pointer Events
+        svg.addEventListener("pointerdown", (e) => {
+            const handle = e.target.closest('.resize-handle'); const geneBody = e.target.closest('.draggable-gene'); const siteBody = e.target.closest('.clickable-site');
+            const textBody = e.target.closest('.draggable-text'); const linearBody = e.target.closest('.draggable-linear'); const recombBody = e.target.closest('.draggable-recomb');
+            const rect = svg.getBoundingClientRect(); dragInitialMouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+            if (handle) {
+                const id = Number(handle.getAttribute("data-id")); const type = handle.getAttribute("data-type"); dragMode = type;
+                if (type === 'site') { clearSelection(); selectedSiteId = id; draggingElement = 'site'; draggingObj = sitesData.find(s => s.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { bp: draggingObj.bp }; }
+                else if (type === 'start' || type === 'end') { clearSelection(); selectedGeneId = id; draggingElement = 'gene'; draggingObj = genesData.find(g => g.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+                else if (type === 'linear-start' || type === 'linear-end') { clearSelection(); selectedLinearId = id; draggingElement = 'linear'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, width: draggingObj.width }; }
+                else if (type.startsWith('recomb-p')) { 
+                    clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; 
+                    draggingObj = recombsData.find(r => r.id === id); 
+                    dragInitialData = { ...draggingObj }; 
+                    currentSnapPoints = getSnapPoints(); 
+                }
+            } else if (geneBody) { const id = Number(geneBody.getAttribute("data-id")); clearSelection(); selectedGeneId = id; draggingElement = 'gene'; dragMode = 'body'; draggingObj = genesData.find(g => g.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+            else if (siteBody) { const id = Number(siteBody.getAttribute("data-id")); clearSelection(); selectedSiteId = id; draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { bp: draggingObj.bp }; }
+            else if (textBody) { const id = Number(textBody.getAttribute("data-id")); clearSelection(); selectedTextId = id; draggingElement = 'text'; dragMode = 'body'; draggingObj = textsData.find(t => t.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
+            else if (linearBody) { const id = Number(linearBody.getAttribute("data-id")); clearSelection(); selectedLinearId = id; draggingElement = 'linear'; dragMode = 'body'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
+            else if (recombBody) { const id = Number(recombBody.getAttribute("data-id")); clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; dragMode = 'body'; draggingObj = recombsData.find(r => r.id === id); dragInitialData = { ...draggingObj }; }
+            else clearSelection();
+            renderSelection(); drawMap();
+        });
+
+        window.addEventListener("pointermove", (e) => {
+            if (!draggingElement || !draggingObj) return;
+            const rect = svg.getBoundingClientRect(); const dx = (e.clientX - rect.left) - dragInitialMouse.x; const dy = (e.clientY - rect.top) - dragInitialMouse.y;
+            
+            if (draggingElement === 'text') { draggingObj.x = dragInitialData.x + dx; draggingObj.y = dragInitialData.y + dy; } 
+            else if (draggingElement === 'linear') {
+                if (dragMode === 'body') { draggingObj.x = dragInitialData.x + dx; draggingObj.y = dragInitialData.y + dy; } 
+                else if (dragMode === 'linear-start') { let nX = dragInitialData.x + dx; let nW = dragInitialData.width - dx; if (nW < 10) { nW = 10; nX = dragInitialData.x + dragInitialData.width - 10; } draggingObj.x = nX; draggingObj.width = nW; } 
+                else if (dragMode === 'linear-end') { let nW = dragInitialData.width + dx; if (nW < 10) nW = 10; draggingObj.width = nW; }
+            }
+            else if (draggingElement === 'recomb') {
+                if (dragMode === 'body') { 
+                    draggingObj.p1x = dragInitialData.p1x + dx; draggingObj.p1y = dragInitialData.p1y + dy; 
+                    draggingObj.p2x = dragInitialData.p2x + dx; draggingObj.p2y = dragInitialData.p2y + dy; 
+                    draggingObj.p3x = dragInitialData.p3x + dx; draggingObj.p3y = dragInitialData.p3y + dy; 
+                    draggingObj.p4x = dragInitialData.p4x + dx; draggingObj.p4y = dragInitialData.p4y + dy; 
+                } 
+                else if (dragMode.startsWith('recomb-p')) { 
+                    let pointKey = dragMode.replace('recomb-', ''); 
+                    let nX = dragInitialData[pointKey + 'x'] + dx;
+                    let nY = dragInitialData[pointKey + 'y'] + dy;
+                    
+                    for (let p of currentSnapPoints) {
+                        if (Math.hypot(p.x - nX, p.y - nY) < 15) { nX = p.x; nY = p.y; break; }
+                    }
+                    
+                    draggingObj[pointKey + 'x'] = nX; 
+                    draggingObj[pointKey + 'y'] = nY; 
+                }
+            }
+            else {
+                const isLinearTarget = draggingObj.target && draggingObj.target.startsWith("linear_");
+                if (isLinearTarget) {
+                    const lId = parseInt(draggingObj.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (l) {
+                        const bpDiffLinear = (dx / l.width) * l.bpLength;
+                        if (draggingElement === 'gene') {
+                            if (dragMode === 'body') { draggingObj.start = dragInitialData.start + bpDiffLinear; draggingObj.end = dragInitialData.end + bpDiffLinear; } 
+                            else if (dragMode === 'start') { draggingObj.start = dragInitialData.start + bpDiffLinear; } 
+                            else if (dragMode === 'end') { draggingObj.end = dragInitialData.end + bpDiffLinear; }
+                            draggingObj.start = Math.max(0, Math.min(l.bpLength, draggingObj.start));
+                            draggingObj.end = Math.max(0, Math.min(l.bpLength, draggingObj.end));
+                        } else if (draggingElement === 'site') {
+                            draggingObj.bp = dragInitialData.bp + bpDiffLinear;
+                            draggingObj.bp = Math.max(0, Math.min(l.bpLength, draggingObj.bp));
+                        }
+                    }
+                } else {
+                    const totalLength = Number(inputLength.value);
+                    const currentAngle = getAngleFromMouse(e);
+                    let angleDiff = currentAngle - dragStartAngle;
+                    if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI; if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+                    const bpDiff = Math.round((angleDiff / (2 * Math.PI)) * totalLength);
+                    
+                    if (draggingElement === 'gene') {
+                        if (dragMode === 'body') { draggingObj.start = dragInitialData.start + bpDiff; draggingObj.end = dragInitialData.end + bpDiff; } 
+                        else if (dragMode === 'start') { draggingObj.start = dragInitialData.start + bpDiff; } 
+                        else if (dragMode === 'end') { draggingObj.end = dragInitialData.end + bpDiff; }
+                        draggingObj.start = (draggingObj.start % totalLength + totalLength) % totalLength;
+                        draggingObj.end = (draggingObj.end % totalLength + totalLength) % totalLength;
+                    } else if (draggingElement === 'site') {
+                        draggingObj.bp = dragInitialData.bp + bpDiff;
+                        draggingObj.bp = (draggingObj.bp % totalLength + totalLength) % totalLength;
+                    }
+                }
+            }
+            drawMap(); renderSelection();
+        });
+
+        function handlePointerUp() { 
+            if (draggingElement && draggingObj) saveState(); 
+            draggingElement = null; draggingObj = null; dragMode = null; currentSnapPoints = []; 
+        }
+
+        window.addEventListener("pointerup", handlePointerUp);
+        window.addEventListener("pointercancel", handlePointerUp); 
+        
+        // Input Change Listeners update active state & tabs
+        inputShowPlasmid.addEventListener("change", () => { drawMap(); saveState(); }); 
+        inputName.addEventListener("input", () => { drawMap(); renderTabs(); });
+        inputName.addEventListener("change", saveState);
+        inputLength.addEventListener("input", drawMap); inputLength.addEventListener("change", saveState);
+        inputShowLength.addEventListener("change", () => { drawMap(); saveState(); }); 
+        inputThickness.addEventListener("input", drawMap); inputThickness.addEventListener("change", saveState); 
+        inputFontSize.addEventListener("input", drawMap); inputFontSize.addEventListener("change", saveState); 
+
+        window.addEventListener("keydown", (e) => {
+            const key = e.key.toLowerCase();
+            
+            // Ctrl/Cmd + I (Italic Shortcut)
+            if ((e.ctrlKey || e.metaKey) && key === 'i') {
+                e.preventDefault();
+                let updated = false;
+                if (selectedGeneId !== null) {
+                    const obj = genesData.find(o => o.id === selectedGeneId);
+                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
+                } else if (selectedSiteId !== null) {
+                    const obj = sitesData.find(o => o.id === selectedSiteId);
+                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
+                } else if (selectedTextId !== null) {
+                    const obj = textsData.find(o => o.id === selectedTextId);
+                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
+                }
+                if (updated) { drawMap(); saveState(); }
+                return;
+            }
+
+            const activeTag = document.activeElement.tagName.toLowerCase();
+            if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+            
+            if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+            if (((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'z') || ((e.ctrlKey || e.metaKey) && key === 'y')) { e.preventDefault(); redo(); }
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedGeneId !== null) deleteGene(selectedGeneId); else if (selectedSiteId !== null) deleteSite(selectedSiteId);
+                else if (selectedTextId !== null) deleteText(selectedTextId); else if (selectedLinearId !== null) deleteLinear(selectedLinearId); else if (selectedRecombId !== null) deleteRecomb(selectedRecombId);
+            }
+        });
+
+        // App Boot
+        loadFromArtboard(1);
+    </script>
+</body>
+</html>
