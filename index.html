@@ -40,6 +40,11 @@
         .delete-btn { background-color: #f44336; padding: 5px; font-size: 12px; margin-top: 10px; width: 100%; color: white; border: none; border-radius: 3px; cursor: pointer;}
         .delete-btn:hover { background-color: #d32f2f; }
 
+        /* トグルボタン用のスタイル */
+        .btn-toggle { background-color: #222; border: 1px solid #555; color: #fff; padding: 8px 4px; width: 100%; font-weight: normal; font-size: 13px; text-align: center; }
+        .btn-toggle:hover:not(:disabled) { background-color: #444; }
+        .btn-toggle:disabled { color: #666; border-color: #444; background-color: #1a1a1a; cursor: not-allowed; }
+
         .input-group { margin-bottom: 10px; }
         .input-group label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; color: #ccc; }
         .input-group input[type="text"], .input-group input[type="number"], .input-group select { width: 100%; padding: 8px 6px; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; background-color: #222; color: #fff; }
@@ -353,6 +358,23 @@
             return { x: center + radius * Math.cos(angle), y: center + radius * Math.sin(angle) };
         }
 
+        // トグルボタン用のアクション関数
+        window.toggleGeneShape = function(id) {
+            const obj = genesData.find(o => o.id === id);
+            if (obj) {
+                obj.shape = obj.shape === 'arrow' ? 'box' : 'arrow';
+                renderSelection(); drawMap(); saveState();
+            }
+        };
+
+        window.toggleGeneDir = function(id) {
+            const obj = genesData.find(o => o.id === id);
+            if (obj) {
+                obj.dir = obj.dir === 'forward' ? 'reverse' : 'forward';
+                renderSelection(); drawMap(); saveState();
+            }
+        };
+
         function renderSelection() {
             selectionContainer.innerHTML = "";
             if (selectedGeneId !== null) {
@@ -360,6 +382,10 @@
                 if (!gene) return;
                 const targetText = gene.target === "plasmid" ? "Plasmid" : "Linear DNA";
                 const div = document.createElement("div"); div.className = "gene-block";
+                
+                const shapeText = gene.shape === 'arrow' ? 'Arrow ➔' : 'Box ◼';
+                const dirText = gene.dir === 'forward' ? 'Forward ⟳' : 'Reverse ⟲';
+                
                 div.innerHTML = `
                     <div style="font-size: 12px; color: #64b5f6; font-weight: bold; margin-bottom: 8px;">Gene (on ${targetText})</div>
                     <div class="input-group"><input type="text" value="${gene.name}" onchange="saveState()" oninput="updateGene(${gene.id}, 'name', this.value)" style="font-weight: bold;"></div>
@@ -368,8 +394,8 @@
                         <div style="flex: 1;"><label>End (bp)</label><input type="number" value="${Math.round(gene.end)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'end', this.value)"></div>
                     </div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1;"><label>Shape</label><select onchange="updateGene(${gene.id}, 'shape', this.value); saveState();"><option value="arrow" ${gene.shape === "arrow" ? "selected" : ""}>Arrow</option><option value="box" ${gene.shape === "box" ? "selected" : ""}>Box</option></select></div>
-                        <div style="flex: 1;"><label>Direction</label><select onchange="updateGene(${gene.id}, 'dir', this.value); saveState();" ${gene.shape === "box" ? "disabled" : ""}><option value="forward" ${gene.dir === "forward" ? "selected" : ""}>Forward</option><option value="reverse" ${gene.dir === "reverse" ? "selected" : ""}>Reverse</option></select></div>
+                        <div style="flex: 1;"><label>Shape</label><button class="btn-toggle" onclick="toggleGeneShape(${gene.id})">${shapeText}</button></div>
+                        <div style="flex: 1;"><label>Direction</label><button class="btn-toggle" onclick="toggleGeneDir(${gene.id})" ${gene.shape === 'box' ? 'disabled' : ''}>${dirText}</button></div>
                         <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${gene.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateGene(${gene.id}, 'fontSize', this.value)"></div>
                     </div>
                     <div class="input-group" style="display: flex; gap: 8px;">
@@ -1121,7 +1147,7 @@
             
             // Ctrl/Cmd + I (Italic Shortcut)
             if ((e.ctrlKey || e.metaKey) && key === 'i') {
-                e.preventDefault(); // デフォルトの動作（ブラウザの機能など）をブロック
+                e.preventDefault(); 
                 let updated = false;
                 if (selectedGeneId !== null) {
                     const obj = genesData.find(o => o.id === selectedGeneId);
