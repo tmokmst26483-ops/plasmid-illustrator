@@ -40,7 +40,6 @@
         .delete-btn { background-color: #f44336; padding: 5px; font-size: 12px; margin-top: 10px; width: 100%; color: white; border: none; border-radius: 3px; cursor: pointer;}
         .delete-btn:hover { background-color: #d32f2f; }
 
-        /* トグルボタン用のスタイル */
         .btn-toggle { background-color: #222; border: 1px solid #555; color: #fff; padding: 8px 4px; width: 100%; font-weight: normal; font-size: 13px; text-align: center; }
         .btn-toggle:hover:not(:disabled) { background-color: #444; }
         .btn-toggle:disabled { color: #666; border-color: #444; background-color: #1a1a1a; cursor: not-allowed; }
@@ -58,8 +57,8 @@
         svg { background-color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.3); touch-action: none; }
         text { user-select: none; pointer-events: none; }
         
-        .draggable-gene, .draggable-linear, .draggable-recomb { cursor: grab; }
-        .draggable-gene:active, .draggable-linear:active, .draggable-recomb:active { cursor: grabbing; }
+        .draggable-gene, .draggable-linear, .draggable-recomb, .draggable-plasmid { cursor: grab; }
+        .draggable-gene:active, .draggable-linear:active, .draggable-recomb:active, .draggable-plasmid:active { cursor: grabbing; }
         .clickable-site { cursor: pointer; }
         .clickable-site:active { cursor: grabbing; }
         
@@ -89,9 +88,13 @@
         <button id="btn-add-recomb" class="btn-pink">+ Add Recombination</button>
         <button id="btn-add-text" class="btn-purple">+ Add Text</button>
         
-        <p style="font-size: 11px; color: #aaa; margin-top: 5px; width: 100%;">* Select a Linear DNA first to add items to it.</p>
+        <p style="font-size: 11px; color: #aaa; margin-top: 5px; width: 100%; line-height: 1.4;">
+            * Select a Linear DNA first to add items to it.<br>
+            * Scroll mouse wheel on canvas to rotate plasmid genes (+Shift for fine).<br>
+            * Drag plasmid ring or title to move the entire plasmid.
+        </p>
         
-        <hr style="width: 100%; border: 0; border-top: 1px solid #444; margin: 15px 0;">
+        <hr style="width: 100%; border: 0; border-top: 1px solid #444; margin: 10px 0;">
         
         <div style="font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #ccc; width: 100%;">Export As:</div>
         <div style="display: flex; gap: 5px; width: 100%;">
@@ -101,13 +104,10 @@
         </div>
     </div>
 
-    <!-- Artboard Layout Container -->
     <div id="center-panel">
-        <div id="tab-bar">
-            <!-- Tabs will be dynamically rendered here -->
-        </div>
+        <div id="tab-bar"></div>
         <div id="center-canvas">
-            <svg width="800" height="800" id="main-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+            <svg width="800" height="800" id="main-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
         </div>
     </div>
 
@@ -163,14 +163,14 @@
         const btnExportPng = document.getElementById("btn-export-png");
         const btnExportJpeg = document.getElementById("btn-export-jpeg");
 
-        const CENTER = 400;
+        const DEFAULT_CENTER = 400;
+        let plasmidX = DEFAULT_CENTER;
+        let plasmidY = DEFAULT_CENTER;
 
-        // === ARTBOARD MANAGEMENT ===
         let artboards = [];
         let activeArtboardId = null;
         let nextArtboardId = 2;
 
-        // Global variables representing the ACTIVE artboard state
         let genesData = []; let nextGeneId = 1;
         let sitesData = []; let nextSiteId = 1;
         let textsData = []; let nextTextId = 1;
@@ -197,6 +197,7 @@
                 plasmidName: inputName.value, plasmidLength: inputLength.value,
                 showLength: inputShowLength.checked, showPlasmid: inputShowPlasmid.checked,
                 thickness: inputThickness.value, globalFontSize: inputFontSize.value,
+                plasmidX, plasmidY,
                 history, historyIndex,
                 selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
             };
@@ -223,6 +224,8 @@
             inputShowLength.checked = d.showLength; 
             inputShowPlasmid.checked = d.showPlasmid !== undefined ? d.showPlasmid : true;
             inputThickness.value = d.thickness; inputFontSize.value = d.globalFontSize;
+            plasmidX = d.plasmidX !== undefined ? d.plasmidX : DEFAULT_CENTER;
+            plasmidY = d.plasmidY !== undefined ? d.plasmidY : DEFAULT_CENTER;
             
             history = d.history; historyIndex = d.historyIndex;
             selectedGeneId = d.selectedGeneId; selectedSiteId = d.selectedSiteId;
@@ -251,6 +254,7 @@
                     nextGeneId: 1, nextSiteId: 1, nextTextId: 1, nextLinearId: 1, nextRecombId: 1,
                     plasmidName: "New Plasmid", plasmidLength: 5000, showLength: true, showPlasmid: true,
                     thickness: 15, globalFontSize: 14,
+                    plasmidX: DEFAULT_CENTER, plasmidY: DEFAULT_CENTER,
                     history: [], historyIndex: -1,
                     selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
                 }
@@ -286,16 +290,14 @@
             tabBar.innerHTML = html;
         }
 
-        // Initialize First Artboard (真っ新な状態)
         artboards.push({
             id: 1, title: "Untitled Plasmid",
             data: {
-                genes: [],
-                sites: [],
-                texts: [], linears: [], recombs: [],
+                genes: [], sites: [], texts: [], linears: [], recombs: [],
                 nextGeneId: 1, nextSiteId: 1, nextTextId: 1, nextLinearId: 1, nextRecombId: 1,
                 plasmidName: "Untitled Plasmid", plasmidLength: 5000, showLength: true, showPlasmid: true,
                 thickness: 15, globalFontSize: 14,
+                plasmidX: DEFAULT_CENTER, plasmidY: DEFAULT_CENTER,
                 history: [], historyIndex: -1,
                 selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
             }
@@ -312,6 +314,7 @@
                 plasmidName: inputName.value, plasmidLength: inputLength.value, showLength: inputShowLength.checked,
                 showPlasmid: inputShowPlasmid.checked,
                 thickness: inputThickness.value, globalFontSize: inputFontSize.value,
+                plasmidX, plasmidY,
                 selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
             };
 
@@ -335,6 +338,8 @@
             inputShowLength.checked = state.showLength; 
             inputShowPlasmid.checked = state.showPlasmid !== undefined ? state.showPlasmid : true;
             inputThickness.value = state.thickness; inputFontSize.value = state.globalFontSize;
+            plasmidX = state.plasmidX !== undefined ? state.plasmidX : DEFAULT_CENTER;
+            plasmidY = state.plasmidY !== undefined ? state.plasmidY : DEFAULT_CENTER;
             
             selectedGeneId = state.selectedGeneId; selectedSiteId = state.selectedSiteId;
             selectedTextId = state.selectedTextId; selectedLinearId = state.selectedLinearId; selectedRecombId = state.selectedRecombId;
@@ -352,13 +357,12 @@
             return ((r * 299 + g * 587 + b * 114) / 1000) > 128 ? "black" : "white";
         }
 
-        function getCoordinates(bp, totalBp, radius, center) {
+        function getCoordinates(bp, totalBp, radius, cx, cy) {
             const percent = bp / totalBp;
             const angle = (percent * 2 * Math.PI) - (Math.PI / 2);
-            return { x: center + radius * Math.cos(angle), y: center + radius * Math.sin(angle) };
+            return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
         }
 
-        // トグルボタン用のアクション関数
         window.toggleGeneShape = function(id) {
             const obj = genesData.find(o => o.id === id);
             if (obj) {
@@ -546,14 +550,13 @@
 
         btnAddText.addEventListener("click", () => {
             const newId = nextTextId++;
-            textsData.push({ id: newId, text: "Sample Text", x: CENTER, y: CENTER - 100, fontSize: 16, color: "#000000", isItalic: false });
+            textsData.push({ id: newId, text: "Sample Text", x: plasmidX, y: plasmidY - 100, fontSize: 16, color: "#000000", isItalic: false });
             clearSelection(); selectedTextId = newId; renderSelection(); drawMap(); saveState();
         });
 
         btnAddLinear.addEventListener("click", () => {
             const newId = nextLinearId++;
-            // 初期状態を太さ2、黒色に設定
-            linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: CENTER - 200, y: CENTER + 250, width: 400, thickness: 2, color: "#000000" });
+            linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: plasmidX - 200, y: plasmidY + 250, width: 400, thickness: 2, color: "#000000" });
             clearSelection(); selectedLinearId = newId; renderSelection(); drawMap(); saveState();
         });
 
@@ -561,8 +564,8 @@
             const newId = nextRecombId++;
             recombsData.push({ 
                 id: newId, type: "polygon", color: "#2196F3", 
-                p1x: CENTER - 150, p1y: CENTER + 130, p2x: CENTER + 150, p2y: CENTER + 130, 
-                p3x: CENTER + 150, p3y: CENTER + 250, p4x: CENTER - 150, p4y: CENTER + 250,
+                p1x: plasmidX - 150, p1y: plasmidY + 130, p2x: plasmidX + 150, p2y: plasmidY + 130, 
+                p3x: plasmidX + 150, p3y: plasmidY + 250, p4x: plasmidX - 150, p4y: plasmidY + 250,
                 binds: {p1: null, p2: null, p3: null, p4: null}
             });
             clearSelection(); selectedRecombId = newId; renderSelection(); drawMap(); saveState();
@@ -577,11 +580,29 @@
                 t.removeAttribute('stroke-width'); 
                 t.removeAttribute('stroke-dasharray'); 
             });
+
+            // Adobe Illustrator等のSVG 1.1互換ツール向けに xlink:href を確実に設定
+            clonedSvg.querySelectorAll('textPath').forEach(tp => {
+                const ref = tp.getAttribute('href') || tp.getAttribute('xlink:href');
+                if (ref) {
+                    tp.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', ref);
+                    tp.setAttribute('href', ref);
+                }
+            });
+
+            const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+            style.textContent = `text { font-family: Arial, "Helvetica Neue", sans-serif; }`;
+            clonedSvg.insertBefore(style, clonedSvg.firstChild);
+
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             rect.setAttribute("width", "100%");
             rect.setAttribute("height", "100%");
             rect.setAttribute("fill", "white");
             clonedSvg.insertBefore(rect, clonedSvg.firstChild);
+
+            clonedSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            clonedSvg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+
             return clonedSvg.outerHTML;
         }
 
@@ -619,7 +640,6 @@
         btnExportPng.addEventListener("click", () => exportImage('png'));
         btnExportJpeg.addEventListener("click", () => exportImage('jpeg'));
 
-        // Recombination Bindings Updater
         function updateRecombBindings() {
             const globalThickness = Number(inputThickness.value) || 15;
             const totalLength = Number(inputLength.value);
@@ -670,16 +690,16 @@
                             const startAngle = ((gene.start / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                             const endAngle = ((gene.end / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                             
-                            if (ref.point === 'start-mid') { const pos = getCoordinates(gene.start, totalLength, 200, CENTER); newX = pos.x; newY = pos.y; }
-                            else if (ref.point === 'end-mid') { const pos = getCoordinates(gene.end, totalLength, 200, CENTER); newX = pos.x; newY = pos.y; }
-                            else if (ref.point === 'start-top') { const rOuter = 200 + gThickness/2; newX = CENTER + rOuter * Math.cos(startAngle); newY = CENTER + rOuter * Math.sin(startAngle); }
-                            else if (ref.point === 'start-bottom') { const rInner = 200 - gThickness/2; newX = CENTER + rInner * Math.cos(startAngle); newY = CENTER + rInner * Math.sin(startAngle); }
-                            else if (ref.point === 'end-top') { const rOuter = 200 + gThickness/2; newX = CENTER + rOuter * Math.cos(endAngle); newY = CENTER + rOuter * Math.sin(endAngle); }
-                            else if (ref.point === 'end-bottom') { const rInner = 200 - gThickness/2; newX = CENTER + rInner * Math.cos(endAngle); newY = CENTER + rInner * Math.sin(endAngle); }
-                            else if (ref.point === 'start-outerTop') { const rOuter = 200 + gThickness; newX = CENTER + rOuter * Math.cos(startAngle); newY = CENTER + rOuter * Math.sin(startAngle); }
-                            else if (ref.point === 'start-outerBottom') { const rInner = 200 - gThickness; newX = CENTER + rInner * Math.cos(startAngle); newY = CENTER + rInner * Math.sin(startAngle); }
-                            else if (ref.point === 'end-outerTop') { const rOuter = 200 + gThickness; newX = CENTER + rOuter * Math.cos(endAngle); newY = CENTER + rOuter * Math.sin(endAngle); }
-                            else if (ref.point === 'end-outerBottom') { const rInner = 200 - gThickness; newX = CENTER + rInner * Math.cos(endAngle); newY = CENTER + rInner * Math.sin(endAngle); }
+                            if (ref.point === 'start-mid') { const pos = getCoordinates(gene.start, totalLength, 200, plasmidX, plasmidY); newX = pos.x; newY = pos.y; }
+                            else if (ref.point === 'end-mid') { const pos = getCoordinates(gene.end, totalLength, 200, plasmidX, plasmidY); newX = pos.x; newY = pos.y; }
+                            else if (ref.point === 'start-top') { const rOuter = 200 + gThickness/2; newX = plasmidX + rOuter * Math.cos(startAngle); newY = plasmidY + rOuter * Math.sin(startAngle); }
+                            else if (ref.point === 'start-bottom') { const rInner = 200 - gThickness/2; newX = plasmidX + rInner * Math.cos(startAngle); newY = plasmidY + rInner * Math.sin(startAngle); }
+                            else if (ref.point === 'end-top') { const rOuter = 200 + gThickness/2; newX = plasmidX + rOuter * Math.cos(endAngle); newY = plasmidY + rOuter * Math.sin(endAngle); }
+                            else if (ref.point === 'end-bottom') { const rInner = 200 - gThickness/2; newX = plasmidX + rInner * Math.cos(endAngle); newY = plasmidY + rInner * Math.sin(endAngle); }
+                            else if (ref.point === 'start-outerTop') { const rOuter = 200 + gThickness; newX = plasmidX + rOuter * Math.cos(startAngle); newY = plasmidY + rOuter * Math.sin(startAngle); }
+                            else if (ref.point === 'start-outerBottom') { const rInner = 200 - gThickness; newX = plasmidX + rInner * Math.cos(startAngle); newY = plasmidY + rInner * Math.sin(startAngle); }
+                            else if (ref.point === 'end-outerTop') { const rOuter = 200 + gThickness; newX = plasmidX + rOuter * Math.cos(endAngle); newY = plasmidY + rOuter * Math.sin(endAngle); }
+                            else if (ref.point === 'end-outerBottom') { const rInner = 200 - gThickness; newX = plasmidX + rInner * Math.cos(endAngle); newY = plasmidY + rInner * Math.sin(endAngle); }
                         }
                     }
 
@@ -708,10 +728,15 @@
             let lengthTextHTML = "";
 
             if (showPlasmid) {
-                circleHTML = `<circle cx="${CENTER}" cy="${CENTER}" r="200" fill="none" stroke="black" stroke-width="2" />`;
-                const nameY = showLength ? CENTER - 10 : CENTER;
-                nameTextHTML = `<text x="${CENTER}" y="${nameY}" font-family="sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="black" dy="0.35em">${nameText}</text>`;
-                lengthTextHTML = showLength ? `<text x="${CENTER}" y="${CENTER + 25}" font-family="sans-serif" font-size="20" text-anchor="middle" fill="black">${totalLength} bp</text>` : "";
+                circleHTML = `
+                    <g class="draggable-plasmid">
+                        <circle class="hit-area" cx="${plasmidX}" cy="${plasmidY}" r="200" fill="none" stroke="transparent" stroke-width="18" style="pointer-events: stroke; cursor: grab;" />
+                        <circle cx="${plasmidX}" cy="${plasmidY}" r="200" fill="none" stroke="black" stroke-width="2" style="pointer-events: none;" />
+                    </g>
+                `;
+                const nameY = showLength ? plasmidY - 10 : plasmidY;
+                nameTextHTML = `<text class="draggable-plasmid" x="${plasmidX}" y="${nameY}" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="black" dy="0.35em" style="pointer-events: all; cursor: grab;">${nameText}</text>`;
+                lengthTextHTML = showLength ? `<text class="draggable-plasmid" x="${plasmidX}" y="${plasmidY + 25}" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="black" dy="0.35em" style="pointer-events: all; cursor: grab;">${totalLength} bp</text>` : "";
             }
             
             let allGenesHTML = ""; let allSitesHTML = ""; let allTextsHTML = ""; 
@@ -733,7 +758,7 @@
             linearsData.forEach(l => {
                 const isSelected = (l.id === selectedLinearId) ? " selected" : "";
                 const lineHTML = `<line class="hit-area" x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="transparent" stroke-width="${Math.max(15, l.thickness + 10)}" style="pointer-events: all; cursor: grab;" /><line x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="${l.color}" stroke-width="${l.thickness}" stroke-linecap="round" style="pointer-events: none;" />`;
-                const textHTML = `<text x="${l.x - 10}" y="${l.y}" font-family="sans-serif" font-size="${globalFontSize}" font-weight="bold" fill="black" text-anchor="end" dominant-baseline="middle" style="pointer-events: none;">${l.name}</text>`;
+                const textHTML = `<text x="${l.x - 10}" y="${l.y}" font-family="Arial, sans-serif" font-size="${globalFontSize}" font-weight="bold" fill="black" text-anchor="end" dy="0.35em" style="pointer-events: none;">${l.name}</text>`;
                 const hLeft = `<circle cx="${l.x}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-start" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
                 const hRight = `<circle cx="${l.x + l.width}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-end" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
                 allLinearsHTML += `<g class="hover-group draggable-linear${isSelected}" data-id="${l.id}">${lineHTML}${textHTML}${hLeft}${hRight}</g>`;
@@ -757,95 +782,118 @@
                     const y = l.y;
                     
                     let elementHTML = "";
+                    const halfThick = thickness / 2;
+                    const topY = y - halfThick; 
+                    const botY = y + halfThick;
+
                     if (gene.shape === "box") {
-                        elementHTML = `<line x1="${startX}" y1="${y}" x2="${endX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                        elementHTML = `<polygon points="${startX},${topY} ${endX},${topY} ${endX},${botY} ${startX},${botY}" fill="${gene.color}" />`;
                     } else {
                         let leftX = Math.min(startX, endX);
                         let rightX = Math.max(startX, endX);
-                        let headSize = thickness * 1.5;
                         let dist = rightX - leftX;
-                        if (headSize > dist) headSize = dist; 
+                        let headSize = Math.max(4, thickness * 0.46);
                         
-                        let bodyHTML = "", headHTML = "";
-                        const headTopY = y - thickness; 
-                        const headBotY = y + thickness;
-
-                        if (gene.dir === "forward") {
-                            let bodyEndX = rightX - headSize;
-                            bodyHTML = `<line x1="${leftX}" y1="${y}" x2="${bodyEndX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
-                            headHTML = `<polygon points="${rightX},${y} ${bodyEndX},${headTopY} ${bodyEndX},${headBotY}" fill="${gene.color}" />`;
+                        if (headSize >= dist) {
+                            if (gene.dir === "forward") {
+                                elementHTML = `<polygon points="${leftX},${topY} ${rightX},${y} ${leftX},${botY}" fill="${gene.color}" />`;
+                            } else {
+                                elementHTML = `<polygon points="${rightX},${topY} ${leftX},${y} ${rightX},${botY}" fill="${gene.color}" />`;
+                            }
                         } else {
-                            let bodyEndX = leftX + headSize;
-                            bodyHTML = `<line x1="${rightX}" y1="${y}" x2="${bodyEndX}" y2="${y}" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
-                            headHTML = `<polygon points="${leftX},${y} ${bodyEndX},${headTopY} ${bodyEndX},${headBotY}" fill="${gene.color}" />`;
+                            if (gene.dir === "forward") {
+                                let bodyEndX = rightX - headSize;
+                                elementHTML = `<polygon points="${leftX},${topY} ${bodyEndX},${topY} ${rightX},${y} ${bodyEndX},${botY} ${leftX},${botY}" fill="${gene.color}" />`;
+                            } else {
+                                let bodyEndX = leftX + headSize;
+                                elementHTML = `<polygon points="${rightX},${topY} ${bodyEndX},${topY} ${leftX},${y} ${bodyEndX},${botY} ${rightX},${botY}" fill="${gene.color}" />`;
+                            }
                         }
-                        elementHTML = bodyHTML + headHTML;
                     }
                     
                     const midX = (startX + endX) / 2;
-                    const geneLabelHTML = `<text x="${midX}" y="${y}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dominant-baseline="middle">${gene.name}</text>`;
+                    const geneLabelHTML = `<text x="${midX}" y="${y}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em">${gene.name}</text>`;
                     const startHandleHTML = `<circle cx="${startX}" cy="${y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="start" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     const endHandleHTML = `<circle cx="${endX}" cy="${y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="end" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     
                     allLinearsHTML += `<g class="hover-group${isSelected}"><g class="draggable-gene" data-id="${gene.id}" data-type="body">${elementHTML}${geneLabelHTML}</g>${startHandleHTML}${endHandleHTML}</g>`;
                 } 
                 else {
-                    let elementHTML = ""; let visualStartPos, visualEndPos; 
+                    let elementHTML = "";
+                    const visualStartPos = getCoordinates(gene.start, totalLength, 200, plasmidX, plasmidY);
+                    const visualEndPos = getCoordinates(gene.end, totalLength, 200, plasmidX, plasmidY);
+                    const rOuter = 200 + thickness / 2;
+                    const rInner = 200 - thickness / 2;
+
+                    let dist = gene.end - gene.start;
+                    if (dist < 0) dist += totalLength;
+
                     if (gene.shape === "box") {
-                        visualStartPos = getCoordinates(gene.start, totalLength, 200, CENTER);
-                        visualEndPos = getCoordinates(gene.end, totalLength, 200, CENTER);
-                        let distance = gene.end - gene.start; if (distance < 0) distance += totalLength;
-                        const largeArcFlag = distance > (totalLength / 2) ? 1 : 0;
-                        elementHTML = `<path d="M ${visualStartPos.x} ${visualStartPos.y} A 200 200 0 ${largeArcFlag} 1 ${visualEndPos.x} ${visualEndPos.y}" fill="none" stroke="${gene.color}" stroke-width="${thickness}" stroke-linecap="butt" />`;
+                        const largeArcFlag = dist > (totalLength / 2) ? 1 : 0;
+                        const startOut = getCoordinates(gene.start, totalLength, rOuter, plasmidX, plasmidY);
+                        const endOut = getCoordinates(gene.end, totalLength, rOuter, plasmidX, plasmidY);
+                        const startIn = getCoordinates(gene.start, totalLength, rInner, plasmidX, plasmidY);
+                        const endIn = getCoordinates(gene.end, totalLength, rInner, plasmidX, plasmidY);
+                        elementHTML = `<path d="M ${startOut.x} ${startOut.y} A ${rOuter} ${rOuter} 0 ${largeArcFlag} 1 ${endOut.x} ${endOut.y} L ${endIn.x} ${endIn.y} A ${rInner} ${rInner} 0 ${largeArcFlag} 0 ${startIn.x} ${startIn.y} Z" fill="${gene.color}" />`;
                     } else {
-                        let dist = (gene.dir === "forward") ? (gene.end - gene.start) : (gene.start - gene.end);
-                        if (dist < 0) dist += totalLength; 
-                        const arrowLengthPx = thickness * 1.5; const circumference = 2 * Math.PI * 200;
-                        let arrowHeadSize = (arrowLengthPx / circumference) * totalLength; if (dist < arrowHeadSize) arrowHeadSize = dist; 
-                        let overlapBp = (thickness * 0.5 / circumference) * totalLength; if (overlapBp > arrowHeadSize * 0.8) overlapBp = arrowHeadSize * 0.8; 
+                        const arrowLengthPx = Math.max(4, thickness * 0.46); 
+                        const circumference = 2 * Math.PI * 200;
+                        const arrowHeadSize = (arrowLengthPx / circumference) * totalLength;
 
-                        let bodyStart, bodyEnd, sweepFlag, trueEndBp, arcEndBp;
-                        if (gene.dir === "forward") {
-                            bodyStart = gene.start; bodyEnd = (gene.end - arrowHeadSize + totalLength) % totalLength; 
-                            arcEndBp = (bodyEnd + overlapBp) % totalLength; sweepFlag = 1; trueEndBp = gene.end;
+                        if (dist <= arrowHeadSize) {
+                            if (gene.dir === "forward") {
+                                const baseOut = getCoordinates(gene.start, totalLength, rOuter, plasmidX, plasmidY);
+                                const baseIn = getCoordinates(gene.start, totalLength, rInner, plasmidX, plasmidY);
+                                const tipPos = getCoordinates(gene.end, totalLength, 200, plasmidX, plasmidY);
+                                elementHTML = `<path d="M ${baseOut.x} ${baseOut.y} L ${tipPos.x} ${tipPos.y} L ${baseIn.x} ${baseIn.y} Z" fill="${gene.color}" />`;
+                            } else {
+                                const baseOut = getCoordinates(gene.end, totalLength, rOuter, plasmidX, plasmidY);
+                                const baseIn = getCoordinates(gene.end, totalLength, rInner, plasmidX, plasmidY);
+                                const tipPos = getCoordinates(gene.start, totalLength, 200, plasmidX, plasmidY);
+                                elementHTML = `<path d="M ${baseOut.x} ${baseOut.y} L ${tipPos.x} ${tipPos.y} L ${baseIn.x} ${baseIn.y} Z" fill="${gene.color}" />`;
+                            }
                         } else {
-                            bodyStart = gene.end; bodyEnd = (gene.start + arrowHeadSize) % totalLength; 
-                            arcEndBp = (bodyEnd - overlapBp + totalLength) % totalLength; sweepFlag = 0; trueEndBp = gene.start;
-                        }
+                            const arcDistance = dist - arrowHeadSize;
+                            const largeArcFlag = arcDistance > (totalLength / 2) ? 1 : 0;
 
-                        const startPos = getCoordinates(bodyStart, totalLength, 200, CENTER);
-                        const bodyEndPos = getCoordinates(bodyEnd, totalLength, 200, CENTER);
-                        const arcEndPos = getCoordinates(arcEndBp, totalLength, 200, CENTER);
-                        let arcDistance = (gene.dir === "forward") ? (arcEndBp - bodyStart) : (bodyStart - arcEndBp);
-                        if (arcDistance < 0) arcDistance += totalLength; const largeArcFlag = arcDistance > (totalLength / 2) ? 1 : 0;
-                        
-                        const bodyHTML = `<path d="M ${startPos.x} ${startPos.y} A 200 200 0 ${largeArcFlag} ${sweepFlag} ${arcEndPos.x} ${arcEndPos.y}" fill="none" stroke="${gene.color}" stroke-width="${thickness}" />`;
-                        const tipPos = getCoordinates(trueEndBp, totalLength, 200, CENTER);
-                        let dx = tipPos.x - bodyEndPos.x; let dy = tipPos.y - bodyEndPos.y; let vectorLength = Math.sqrt(dx * dx + dy * dy);
-                        if (vectorLength === 0) { dx = 1; dy = 0; vectorLength = 1; }
-                        const wx = -dy / vectorLength; const wy = dx / vectorLength;
-                        const innerPos = { x: bodyEndPos.x + wx * thickness, y: bodyEndPos.y + wy * thickness };
-                        const outerPos = { x: bodyEndPos.x - wx * thickness, y: bodyEndPos.y - wy * thickness };
-                        
-                        const headHTML = `<polygon points="${tipPos.x},${tipPos.y} ${innerPos.x},${innerPos.y} ${outerPos.x},${outerPos.y}" fill="${gene.color}" />`;
-                        elementHTML = bodyHTML + headHTML;
-                        if (gene.dir === "forward") { visualStartPos = getCoordinates(gene.start, totalLength, 200, CENTER); visualEndPos = tipPos; } 
-                        else { visualStartPos = tipPos; visualEndPos = getCoordinates(gene.end, totalLength, 200, CENTER); }
+                            if (gene.dir === "forward") {
+                                const bodyStart = gene.start;
+                                const bodyEnd = (gene.end - arrowHeadSize + totalLength) % totalLength;
+                                const bodyStartOut = getCoordinates(bodyStart, totalLength, rOuter, plasmidX, plasmidY);
+                                const bodyStartIn = getCoordinates(bodyStart, totalLength, rInner, plasmidX, plasmidY);
+                                const bodyEndOut = getCoordinates(bodyEnd, totalLength, rOuter, plasmidX, plasmidY);
+                                const bodyEndIn = getCoordinates(bodyEnd, totalLength, rInner, plasmidX, plasmidY);
+                                const tipPos = getCoordinates(gene.end, totalLength, 200, plasmidX, plasmidY);
+
+                                elementHTML = `<path d="M ${bodyStartOut.x} ${bodyStartOut.y} A ${rOuter} ${rOuter} 0 ${largeArcFlag} 1 ${bodyEndOut.x} ${bodyEndOut.y} L ${tipPos.x} ${tipPos.y} L ${bodyEndIn.x} ${bodyEndIn.y} A ${rInner} ${rInner} 0 ${largeArcFlag} 0 ${bodyStartIn.x} ${bodyStartIn.y} Z" fill="${gene.color}" />`;
+                            } else {
+                                const bodyStart = gene.end;
+                                const bodyEnd = (gene.start + arrowHeadSize) % totalLength;
+                                const bodyStartOut = getCoordinates(bodyStart, totalLength, rOuter, plasmidX, plasmidY);
+                                const bodyStartIn = getCoordinates(bodyStart, totalLength, rInner, plasmidX, plasmidY);
+                                const bodyEndOut = getCoordinates(bodyEnd, totalLength, rOuter, plasmidX, plasmidY);
+                                const bodyEndIn = getCoordinates(bodyEnd, totalLength, rInner, plasmidX, plasmidY);
+                                const tipPos = getCoordinates(gene.start, totalLength, 200, plasmidX, plasmidY);
+
+                                elementHTML = `<path d="M ${bodyStartOut.x} ${bodyStartOut.y} A ${rOuter} ${rOuter} 0 ${largeArcFlag} 0 ${bodyEndOut.x} ${bodyEndOut.y} L ${tipPos.x} ${tipPos.y} L ${bodyEndIn.x} ${bodyEndIn.y} A ${rInner} ${rInner} 0 ${largeArcFlag} 1 ${bodyStartIn.x} ${bodyStartIn.y} Z" fill="${gene.color}" />`;
+                            }
+                        }
                     }
 
                     let midBp = (gene.start + gene.end) / 2;
-                    if (gene.start > gene.end) midBp += totalLength / 2; midBp = midBp % totalLength;
+                    if (gene.start > gene.end) midBp += totalLength / 2;
+                    midBp = ((midBp % totalLength) + totalLength) % totalLength;
                     let percent = midBp / totalLength; let startPercent, endPercent, pathSweepFlag;
                     if (percent > 0.25 && percent < 0.75) { startPercent = percent + 0.24; endPercent = percent - 0.24; pathSweepFlag = 0; } 
                     else { startPercent = percent - 0.24; endPercent = percent + 0.24; pathSweepFlag = 1; }
 
                     let startAngle = (startPercent * 2 * Math.PI) - (Math.PI / 2); let endAngle = (endPercent * 2 * Math.PI) - (Math.PI / 2);
-                    let startX = CENTER + 200 * Math.cos(startAngle); let startY = CENTER + 200 * Math.sin(startAngle);
-                    let endX = CENTER + 200 * Math.cos(endAngle); let endY = CENTER + 200 * Math.sin(endAngle);
+                    let startX = plasmidX + 200 * Math.cos(startAngle); let startY = plasmidY + 200 * Math.sin(startAngle);
+                    let endX = plasmidX + 200 * Math.cos(endAngle); let endY = plasmidY + 200 * Math.sin(endAngle);
                     
                     let textPathId = `textPath-gene-${gene.id}`;
                     allDefsHTML += `<path id="${textPathId}" d="M ${startX} ${startY} A 200 200 0 0 ${pathSweepFlag} ${endX} ${endY}" />`;
-                    const geneLabelHTML = `<text font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em"><textPath href="#${textPathId}" startOffset="50%">${gene.name}</textPath></text>`;
+                    const geneLabelHTML = `<text font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em"><textPath xlink:href="#${textPathId}" href="#${textPathId}" startOffset="50%">${gene.name}</textPath></text>`;
                     const startHandleHTML = `<circle cx="${visualStartPos.x}" cy="${visualStartPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="start" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     const endHandleHTML = `<circle cx="${visualEndPos.x}" cy="${visualEndPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="end" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     allGenesHTML += `<g class="hover-group${isSelected}"><g class="draggable-gene" data-id="${gene.id}" data-type="body">${elementHTML}${geneLabelHTML}</g>${startHandleHTML}${endHandleHTML}</g>`;
@@ -864,7 +912,6 @@
                 let userOffset = site.textOffset !== undefined ? site.textOffset : 15;
                 if (site.cutType === "none" && site.textOffset === undefined) userOffset = 5; 
 
-                // 直線上に描画
                 if (site.target && site.target.startsWith("linear_")) {
                     const lId = parseInt(site.target.split("_")[1]);
                     const l = linearsData.find(x => x.id === lId);
@@ -888,13 +935,12 @@
 
                     let textY = topY - userOffset;
                     const textHTML = `
-                        <text class="hit-area" x="${posX}" y="${textY}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="middle" style="pointer-events: all; cursor: grab;">${site.name}</text>
-                        <text x="${posX}" y="${textY}" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="middle" style="pointer-events: none;">${site.name}</text>
+                        <text class="hit-area" x="${posX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="middle" style="pointer-events: all; cursor: grab;">${site.name}</text>
+                        <text x="${posX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="middle" style="pointer-events: none;">${site.name}</text>
                     `;
                     const handleHTML = `<circle cx="${posX}" cy="${topY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
                     allLinearsHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
                 }
-                // 円上に描画
                 else {
                     let angleDeg = (site.bp / totalLength) * 360 - 90; let theta = angleDeg * (Math.PI / 180);
                     let pathD = ""; let outX, outY;
@@ -902,29 +948,29 @@
                     let outerR = 200 + (thickness / 2) + lineProtrusion; let innerR = 200 - (thickness / 2) - lineProtrusion; 
                     
                     if (site.cutType === "blunt" || site.cutType === "none") {
-                        outX = CENTER + outerR * Math.cos(theta); outY = CENTER + outerR * Math.sin(theta);
-                        let inX = CENTER + innerR * Math.cos(theta); let inY = CENTER + innerR * Math.sin(theta);
+                        outX = plasmidX + outerR * Math.cos(theta); outY = plasmidY + outerR * Math.sin(theta);
+                        let inX = plasmidX + innerR * Math.cos(theta); let inY = plasmidY + innerR * Math.sin(theta);
                         pathD = `M ${outX} ${outY} L ${inX} ${inY}`;
                     } else {
                         let offsetPx = Math.max(6, thickness * 0.3); let offsetRad = offsetPx / 200; 
                         let t1 = theta - offsetRad; let t2 = theta + offsetRad;
-                        outX = CENTER + outerR * Math.cos(t1); outY = CENTER + outerR * Math.sin(t1);
-                        let p2x = CENTER + 200 * Math.cos(t1); let p2y = CENTER + 200 * Math.sin(t1);
-                        let p3x = CENTER + 200 * Math.cos(t2); let p3y = CENTER + 200 * Math.sin(t2);
-                        let p4x = CENTER + innerR * Math.cos(t2); let p4y = CENTER + innerR * Math.sin(t2);
+                        outX = plasmidX + outerR * Math.cos(t1); outY = plasmidY + outerR * Math.sin(t1);
+                        let p2x = plasmidX + 200 * Math.cos(t1); let p2y = plasmidY + 200 * Math.sin(t1);
+                        let p3x = plasmidX + 200 * Math.cos(t2); let p3y = plasmidY + 200 * Math.sin(t2);
+                        let p4x = plasmidX + innerR * Math.cos(t2); let p4y = plasmidY + innerR * Math.sin(t2);
                         pathD = `M ${outX} ${outY} L ${p2x} ${p2y} A 200 200 0 0 1 ${p3x} ${p3y} L ${p4x} ${p4y}`;
                     }
 
                     const visibleLineHTML = (site.cutType !== "none") ? `<path d="${pathD}" fill="none" stroke="${siteColor}" stroke-width="${cutLineWidth}" style="pointer-events: none;" />` : "";
                     const lineHTML = `<path class="hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${hitAreaWidth}" style="pointer-events: all; cursor: grab;" />${visibleLineHTML}`;
 
-                    const textRadius = outerR + userOffset; const textPos = getCoordinates(site.bp, totalLength, textRadius, CENTER); 
+                    const textRadius = outerR + userOffset; const textPos = getCoordinates(site.bp, totalLength, textRadius, plasmidX, plasmidY); 
                     let textRotation = angleDeg; let anchor = "start"; let normalizedAngle = ((angleDeg % 360) + 360) % 360;
                     if (normalizedAngle > 90 && normalizedAngle < 270) { textRotation += 180; anchor = "end"; }
                     
                     const textHTML = `
-                        <text class="hit-area" x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="${anchor}" dy="0.35em" style="pointer-events: all; cursor: grab;">${site.name}</text>
-                        <text x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="${anchor}" dy="0.35em" style="pointer-events: none;">${site.name}</text>
+                        <text class="hit-area" x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="${anchor}" dy="0.35em" style="pointer-events: all; cursor: grab;">${site.name}</text>
+                        <text x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="${anchor}" dy="0.35em" style="pointer-events: none;">${site.name}</text>
                     `;
                     const handleHTML = `<circle cx="${outX}" cy="${outY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
                     allSitesHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
@@ -937,8 +983,8 @@
                 const strokeProps = isSelected ? `stroke="#9c27b0" stroke-width="1" stroke-dasharray="3,3"` : "";
                 allTextsHTML += `
                     <g class="draggable-text" data-id="${t.id}">
-                        <text class="hit-area" x="${t.x}" y="${t.y}" font-family="sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="transparent" stroke="transparent" stroke-width="15" text-anchor="middle" dominant-baseline="middle" style="pointer-events: all; cursor: grab;">${t.text}</text>
-                        <text x="${t.x}" y="${t.y}" font-family="sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="${t.color}" text-anchor="middle" dominant-baseline="middle" ${strokeProps} style="pointer-events: none;">${t.text}</text>
+                        <text class="hit-area" x="${t.x}" y="${t.y}" font-family="Arial, sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="transparent" stroke="transparent" stroke-width="15" text-anchor="middle" dy="0.35em" style="pointer-events: all; cursor: grab;">${t.text}</text>
+                        <text x="${t.x}" y="${t.y}" font-family="Arial, sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="${t.color}" text-anchor="middle" dy="0.35em" ${strokeProps} style="pointer-events: none;">${t.text}</text>
                     </g>
                 `;
             });
@@ -947,13 +993,14 @@
             svg.innerHTML = allDefsHTML + circleHTML + allRecombsHTML + allLinearsHTML + allGenesHTML + allSitesHTML + nameTextHTML + lengthTextHTML + allTextsHTML;
         }
 
-        // === Drag & Snap Logic (Pointer Events) ===
-        let draggingElement = null; dragMode = null; let draggingObj = null;
-        let dragStartAngle = 0; let dragInitialData = null; let dragInitialMouse = {x: 0, y: 0};
+        let draggingElement = null; let dragMode = null; let draggingObj = null;
+        let dragLastAngle = 0; let dragCumulativeAngle = 0;
+        let dragInitialData = null; let dragInitialMouse = {x: 0, y: 0};
         let currentSnapPoints = []; 
+        let wheelSaveTimeout = null;
 
         function getAngleFromMouse(e) {
-            const rect = svg.getBoundingClientRect(); const x = (e.clientX - rect.left) - CENTER; const y = (e.clientY - rect.top) - CENTER;
+            const rect = svg.getBoundingClientRect(); const x = (e.clientX - rect.left) - plasmidX; const y = (e.clientY - rect.top) - plasmidY;
             let angle = Math.atan2(y, x) + (Math.PI / 2); if (angle < 0) angle += 2 * Math.PI; return angle;
         }
 
@@ -994,39 +1041,44 @@
                         points.push({x: endX, y: y + thickness, ref: {type: 'gene', id: gene.id, point: 'end-outerBottom'}});
                     }
                 } else {
-                    const startPos = getCoordinates(gene.start, totalLength, 200, CENTER);
-                    const endPos = getCoordinates(gene.end, totalLength, 200, CENTER);
+                    const startPos = getCoordinates(gene.start, totalLength, 200, plasmidX, plasmidY);
+                    const endPos = getCoordinates(gene.end, totalLength, 200, plasmidX, plasmidY);
                     points.push({x: startPos.x, y: startPos.y, ref: {type: 'gene', id: gene.id, point: 'start-mid'}});
                     points.push({x: endPos.x, y: endPos.y, ref: {type: 'gene', id: gene.id, point: 'end-mid'}});
                     
                     const startAngle = ((gene.start / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                     const endAngle = ((gene.end / totalLength) * 2 * Math.PI) - (Math.PI / 2);
                     const outerR = 200 + thickness/2; const innerR = 200 - thickness/2;
-                    points.push({x: CENTER + outerR * Math.cos(startAngle), y: CENTER + outerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-top'}});
-                    points.push({x: CENTER + innerR * Math.cos(startAngle), y: CENTER + innerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-bottom'}});
-                    points.push({x: CENTER + outerR * Math.cos(endAngle), y: CENTER + outerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-top'}});
-                    points.push({x: CENTER + innerR * Math.cos(endAngle), y: CENTER + innerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-bottom'}});
+                    points.push({x: plasmidX + outerR * Math.cos(startAngle), y: plasmidY + outerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-top'}});
+                    points.push({x: plasmidX + innerR * Math.cos(startAngle), y: plasmidY + innerR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-bottom'}});
+                    points.push({x: plasmidX + outerR * Math.cos(endAngle), y: plasmidY + outerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-top'}});
+                    points.push({x: plasmidX + innerR * Math.cos(endAngle), y: plasmidY + innerR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-bottom'}});
                     
                     const outerTipR = 200 + thickness; const innerTipR = 200 - thickness;
-                    points.push({x: CENTER + outerTipR * Math.cos(startAngle), y: CENTER + outerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerTop'}});
-                    points.push({x: CENTER + innerTipR * Math.cos(startAngle), y: CENTER + innerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerBottom'}});
-                    points.push({x: CENTER + outerTipR * Math.cos(endAngle), y: CENTER + outerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerTop'}});
-                    points.push({x: CENTER + innerTipR * Math.cos(endAngle), y: CENTER + innerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerBottom'}});
+                    points.push({x: plasmidX + outerTipR * Math.cos(startAngle), y: plasmidY + outerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerTop'}});
+                    points.push({x: plasmidX + innerTipR * Math.cos(startAngle), y: plasmidY + innerTipR * Math.sin(startAngle), ref: {type: 'gene', id: gene.id, point: 'start-outerBottom'}});
+                    points.push({x: plasmidX + outerTipR * Math.cos(endAngle), y: plasmidY + outerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerTop'}});
+                    points.push({x: plasmidX + innerTipR * Math.cos(endAngle), y: plasmidY + innerTipR * Math.sin(endAngle), ref: {type: 'gene', id: gene.id, point: 'end-outerBottom'}});
                 }
             });
             return points;
         }
 
-        // Pointer Events
+        function initAngleDrag(e) {
+            dragLastAngle = getAngleFromMouse(e);
+            dragCumulativeAngle = 0;
+        }
+
         svg.addEventListener("pointerdown", (e) => {
             const handle = e.target.closest('.resize-handle'); const geneBody = e.target.closest('.draggable-gene'); const siteBody = e.target.closest('.clickable-site');
             const textBody = e.target.closest('.draggable-text'); const linearBody = e.target.closest('.draggable-linear'); const recombBody = e.target.closest('.draggable-recomb');
+            const plasmidBody = e.target.closest('.draggable-plasmid');
             const rect = svg.getBoundingClientRect(); dragInitialMouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
             if (handle) {
                 const id = Number(handle.getAttribute("data-id")); const type = handle.getAttribute("data-type"); dragMode = type;
-                if (type === 'site') { clearSelection(); selectedSiteId = id; draggingElement = 'site'; draggingObj = sitesData.find(s => s.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { bp: draggingObj.bp }; }
-                else if (type === 'start' || type === 'end') { clearSelection(); selectedGeneId = id; draggingElement = 'gene'; draggingObj = genesData.find(g => g.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+                if (type === 'site') { clearSelection(); selectedSiteId = id; draggingElement = 'site'; draggingObj = sitesData.find(s => s.id === id); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
+                else if (type === 'start' || type === 'end') { clearSelection(); selectedGeneId = id; draggingElement = 'gene'; draggingObj = genesData.find(g => g.id === id); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
                 else if (type === 'linear-start' || type === 'linear-end') { clearSelection(); selectedLinearId = id; draggingElement = 'linear'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, width: draggingObj.width }; }
                 else if (type.startsWith('recomb-p')) { 
                     clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; 
@@ -1034,15 +1086,22 @@
                     dragInitialData = { ...draggingObj }; 
                     currentSnapPoints = getSnapPoints(); 
                 }
-            } else if (geneBody) { const id = Number(geneBody.getAttribute("data-id")); clearSelection(); selectedGeneId = id; draggingElement = 'gene'; dragMode = 'body'; draggingObj = genesData.find(g => g.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
-            else if (siteBody) { const id = Number(siteBody.getAttribute("data-id")); clearSelection(); selectedSiteId = id; draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === id); dragStartAngle = getAngleFromMouse(e); dragInitialData = { bp: draggingObj.bp }; }
+            } else if (geneBody) { const id = Number(geneBody.getAttribute("data-id")); clearSelection(); selectedGeneId = id; draggingElement = 'gene'; dragMode = 'body'; draggingObj = genesData.find(g => g.id === id); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+            else if (siteBody) { const id = Number(siteBody.getAttribute("data-id")); clearSelection(); selectedSiteId = id; draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === id); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
             else if (textBody) { const id = Number(textBody.getAttribute("data-id")); clearSelection(); selectedTextId = id; draggingElement = 'text'; dragMode = 'body'; draggingObj = textsData.find(t => t.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
             else if (linearBody) { const id = Number(linearBody.getAttribute("data-id")); clearSelection(); selectedLinearId = id; draggingElement = 'linear'; dragMode = 'body'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
             else if (recombBody) { 
                 const id = Number(recombBody.getAttribute("data-id")); clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; dragMode = 'body'; 
                 draggingObj = recombsData.find(r => r.id === id); 
-                draggingObj.binds = {p1:null, p2:null, p3:null, p4:null}; // 全体移動時はバインド解除
+                draggingObj.binds = {p1:null, p2:null, p3:null, p4:null}; 
                 dragInitialData = { ...draggingObj }; 
+            }
+            else if (plasmidBody) {
+                clearSelection();
+                draggingElement = 'plasmid';
+                dragMode = 'body';
+                draggingObj = { x: plasmidX, y: plasmidY };
+                dragInitialData = { x: plasmidX, y: plasmidY };
             }
             else clearSelection();
             renderSelection(); drawMap();
@@ -1052,7 +1111,11 @@
             if (!draggingElement || !draggingObj) return;
             const rect = svg.getBoundingClientRect(); const dx = (e.clientX - rect.left) - dragInitialMouse.x; const dy = (e.clientY - rect.top) - dragInitialMouse.y;
             
-            if (draggingElement === 'text') { draggingObj.x = dragInitialData.x + dx; draggingObj.y = dragInitialData.y + dy; } 
+            if (draggingElement === 'plasmid') {
+                plasmidX = dragInitialData.x + dx;
+                plasmidY = dragInitialData.y + dy;
+            }
+            else if (draggingElement === 'text') { draggingObj.x = dragInitialData.x + dx; draggingObj.y = dragInitialData.y + dy; } 
             else if (draggingElement === 'linear') {
                 if (dragMode === 'body') { draggingObj.x = dragInitialData.x + dx; draggingObj.y = dragInitialData.y + dy; } 
                 else if (dragMode === 'linear-start') { let nX = dragInitialData.x + dx; let nW = dragInitialData.width - dx; if (nW < 10) { nW = 10; nX = dragInitialData.x + dragInitialData.width - 10; } draggingObj.x = nX; draggingObj.width = nW; } 
@@ -1071,12 +1134,12 @@
                     let nY = dragInitialData[pointKey + 'y'] + dy;
                     
                     draggingObj.binds = draggingObj.binds || {p1:null, p2:null, p3:null, p4:null};
-                    draggingObj.binds[pointKey] = null; // スナップ探す前に一旦クリア
+                    draggingObj.binds[pointKey] = null; 
 
                     for (let p of currentSnapPoints) {
                         if (Math.hypot(p.x - nX, p.y - nY) < 15) { 
                             nX = p.x; nY = p.y; 
-                            draggingObj.binds[pointKey] = p.ref; // バインドを記録
+                            draggingObj.binds[pointKey] = p.ref; 
                             break; 
                         }
                     }
@@ -1106,9 +1169,13 @@
                 } else {
                     const totalLength = Number(inputLength.value);
                     const currentAngle = getAngleFromMouse(e);
-                    let angleDiff = currentAngle - dragStartAngle;
-                    if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI; if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-                    const bpDiff = Math.round((angleDiff / (2 * Math.PI)) * totalLength);
+                    let stepDiff = currentAngle - dragLastAngle;
+                    if (stepDiff > Math.PI) stepDiff -= 2 * Math.PI;
+                    if (stepDiff < -Math.PI) stepDiff += 2 * Math.PI;
+                    dragCumulativeAngle += stepDiff;
+                    dragLastAngle = currentAngle;
+
+                    const bpDiff = Math.round((dragCumulativeAngle / (2 * Math.PI)) * totalLength);
                     
                     if (draggingElement === 'gene') {
                         if (dragMode === 'body') { draggingObj.start = dragInitialData.start + bpDiff; draggingObj.end = dragInitialData.end + bpDiff; } 
@@ -1132,8 +1199,38 @@
 
         window.addEventListener("pointerup", handlePointerUp);
         window.addEventListener("pointercancel", handlePointerUp); 
+
+        // マウスホイールによるプラスミド内の全遺伝子（および制限酵素サイト）の一括回転
+        svg.addEventListener("wheel", (e) => {
+            if (!inputShowPlasmid.checked) return;
+            const plasmidGenes = genesData.filter(g => g.target === "plasmid");
+            const plasmidSites = sitesData.filter(s => s.target === "plasmid");
+            if (plasmidGenes.length === 0 && plasmidSites.length === 0) return;
+
+            e.preventDefault();
+            const totalLength = Number(inputLength.value) || 5000;
+            const stepRatio = e.shiftKey ? 0.002 : 0.015;
+            const direction = e.deltaY > 0 ? 1 : -1;
+            const bpShift = direction * totalLength * stepRatio;
+
+            plasmidGenes.forEach(g => {
+                g.start = (((g.start + bpShift) % totalLength) + totalLength) % totalLength;
+                g.end = (((g.end + bpShift) % totalLength) + totalLength) % totalLength;
+            });
+
+            plasmidSites.forEach(s => {
+                s.bp = (((s.bp + bpShift) % totalLength) + totalLength) % totalLength;
+            });
+
+            drawMap();
+            renderSelection();
+
+            clearTimeout(wheelSaveTimeout);
+            wheelSaveTimeout = setTimeout(() => {
+                saveState();
+            }, 400);
+        }, { passive: false });
         
-        // Input Change Listeners update active state & tabs
         inputShowPlasmid.addEventListener("change", () => { drawMap(); saveState(); }); 
         inputName.addEventListener("input", () => { drawMap(); renderTabs(); });
         inputName.addEventListener("change", saveState);
@@ -1143,9 +1240,9 @@
         inputFontSize.addEventListener("input", drawMap); inputFontSize.addEventListener("change", saveState); 
 
         window.addEventListener("keydown", (e) => {
+            if (!e.key) return;
             const key = e.key.toLowerCase();
             
-            // Ctrl/Cmd + I (Italic Shortcut)
             if ((e.ctrlKey || e.metaKey) && key === 'i') {
                 e.preventDefault(); 
                 let updated = false;
@@ -1179,7 +1276,6 @@
             }
         });
 
-        // App Boot
         loadFromArtboard(1);
     </script>
 </body>
