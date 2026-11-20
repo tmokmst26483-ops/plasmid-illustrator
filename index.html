@@ -37,7 +37,7 @@
         .btn-pink:hover { background-color: #c2185b; }
         .btn-blue { background-color: #2196F3; }
         .btn-blue:hover { background-color: #1976D2; }
-        .delete-btn { background-color: #f44336; padding: 5px; font-size: 12px; margin-top: 10px; width: 100%; color: white; border: none; border-radius: 3px; cursor: pointer;}
+        .delete-btn { background-color: #f44336; padding: 6px; font-size: 12px; margin-top: 10px; width: 100%; color: white; border: none; border-radius: 3px; cursor: pointer;}
         .delete-btn:hover { background-color: #d32f2f; }
 
         .btn-toggle { background-color: #222; border: 1px solid #555; color: #fff; padding: 8px 4px; width: 100%; font-weight: normal; font-size: 13px; text-align: center; }
@@ -48,11 +48,12 @@
         .input-group label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; color: #ccc; }
         .input-group input[type="text"], .input-group input[type="number"], .input-group select { width: 100%; padding: 8px 6px; box-sizing: border-box; border: 1px solid #555; border-radius: 4px; background-color: #222; color: #fff; }
         
-        .gene-block { border: 1px solid #4a5568; padding: 15px; border-radius: 5px; background-color: #2d3748; border-left: 4px solid #64b5f6; }
-        .site-block { border: 1px solid #7b6140; padding: 15px; border-radius: 5px; background-color: #4a3f35; border-left: 4px solid #ffb74d; }
-        .text-block { border: 1px solid #70507a; padding: 15px; border-radius: 5px; background-color: #44334a; border-left: 4px solid #ba68c8; }
-        .linear-block { border: 1px solid #3c7370; padding: 15px; border-radius: 5px; background-color: #23403f; border-left: 4px solid #4db6ac; }
-        .recomb-block { border: 1px solid #7c465d; padding: 15px; border-radius: 5px; background-color: #4a2c38; border-left: 4px solid #f06292; }
+        .gene-block { border: 1px solid #4a5568; padding: 15px; border-radius: 5px; background-color: #2d3748; border-left: 4px solid #64b5f6; margin-bottom: 10px; }
+        .site-block { border: 1px solid #7b6140; padding: 15px; border-radius: 5px; background-color: #4a3f35; border-left: 4px solid #ffb74d; margin-bottom: 10px; }
+        .text-block { border: 1px solid #70507a; padding: 15px; border-radius: 5px; background-color: #44334a; border-left: 4px solid #ba68c8; margin-bottom: 10px; }
+        .linear-block { border: 1px solid #3c7370; padding: 15px; border-radius: 5px; background-color: #23403f; border-left: 4px solid #4db6ac; margin-bottom: 10px; }
+        .recomb-block { border: 1px solid #7c465d; padding: 15px; border-radius: 5px; background-color: #4a2c38; border-left: 4px solid #f06292; margin-bottom: 10px; }
+        .multi-block { border: 1px solid #5a6578; padding: 15px; border-radius: 5px; background-color: #282c34; border-left: 4px solid #90caf9; margin-bottom: 10px; }
 
         svg { background-color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.3); touch-action: none; }
         text { user-select: none; pointer-events: none; }
@@ -89,6 +90,8 @@
         <button id="btn-add-text" class="btn-purple">+ Add Text</button>
         
         <p style="font-size: 11px; color: #aaa; margin-top: 5px; width: 100%; line-height: 1.4;">
+            * Drag on empty canvas or Shift + Click to select multiple items.<br>
+            * Ctrl+C / Ctrl+V to duplicate selected items.<br>
             * Select a Linear DNA first to add items to it.<br>
             * Scroll mouse wheel on canvas to rotate plasmid genes (+Shift for fine).<br>
             * Drag plasmid ring or title to move the entire plasmid.
@@ -177,10 +180,50 @@
         let linearsData = []; let nextLinearId = 1;
         let recombsData = []; let nextRecombId = 1;
 
-        let selectedGeneId = null; let selectedSiteId = null;
-        let selectedTextId = null; let selectedLinearId = null; let selectedRecombId = null;
+        // 複数選択管理配列: [{ type: 'gene'|'site'|'text'|'linear'|'recomb', id: number }]
+        let selectedItems = [];
+
+        // クリップボード（コピー＆ペースト用）
+        let clipboardItems = [];
+        let pasteCount = 0;
 
         let history = []; let historyIndex = -1; let isRestoring = false;
+
+        function isSelectedItem(type, id) {
+            return selectedItems.some(item => item.type === type && item.id === id);
+        }
+
+        function selectSingleItem(type, id) {
+            selectedItems = [{ type, id }];
+        }
+
+        function toggleItemSelection(type, id) {
+            const idx = selectedItems.findIndex(item => item.type === type && item.id === id);
+            if (idx >= 0) {
+                selectedItems.splice(idx, 1);
+            } else {
+                selectedItems.push({ type, id });
+            }
+        }
+
+        function clearSelection() {
+            selectedItems = [];
+        }
+
+        function getSelectedIds(type) {
+            return selectedItems.filter(item => item.type === type).map(item => item.id);
+        }
+
+        function pruneInvalidSelections() {
+            selectedItems = selectedItems.filter(item => {
+                if (item.type === 'gene') return genesData.some(g => g.id === item.id);
+                if (item.type === 'site') return sitesData.some(s => s.id === item.id);
+                if (item.type === 'text') return textsData.some(t => t.id === item.id);
+                if (item.type === 'linear') return linearsData.some(l => l.id === item.id);
+                if (item.type === 'recomb') return recombsData.some(r => r.id === item.id);
+                return false;
+            });
+        }
 
         function saveToCurrentArtboard() {
             if (activeArtboardId === null) return;
@@ -199,7 +242,7 @@
                 thickness: inputThickness.value, globalFontSize: inputFontSize.value,
                 plasmidX, plasmidY,
                 history, historyIndex,
-                selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
+                selectedItems: JSON.parse(JSON.stringify(selectedItems))
             };
             artboard.title = inputName.value || "Untitled Plasmid";
         }
@@ -228,8 +271,7 @@
             plasmidY = d.plasmidY !== undefined ? d.plasmidY : DEFAULT_CENTER;
             
             history = d.history; historyIndex = d.historyIndex;
-            selectedGeneId = d.selectedGeneId; selectedSiteId = d.selectedSiteId;
-            selectedTextId = d.selectedTextId; selectedLinearId = d.selectedLinearId; selectedRecombId = d.selectedRecombId;
+            selectedItems = d.selectedItems ? JSON.parse(JSON.stringify(d.selectedItems)) : [];
             
             if (history.length === 0) saveState(); 
             
@@ -256,7 +298,7 @@
                     thickness: 15, globalFontSize: 14,
                     plasmidX: DEFAULT_CENTER, plasmidY: DEFAULT_CENTER,
                     history: [], historyIndex: -1,
-                    selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
+                    selectedItems: []
                 }
             };
             artboards.push(newArtboard);
@@ -299,7 +341,7 @@
                 thickness: 15, globalFontSize: 14,
                 plasmidX: DEFAULT_CENTER, plasmidY: DEFAULT_CENTER,
                 history: [], historyIndex: -1,
-                selectedGeneId: null, selectedSiteId: null, selectedTextId: null, selectedLinearId: null, selectedRecombId: null
+                selectedItems: []
             }
         });
 
@@ -315,7 +357,7 @@
                 showPlasmid: inputShowPlasmid.checked,
                 thickness: inputThickness.value, globalFontSize: inputFontSize.value,
                 plasmidX, plasmidY,
-                selectedGeneId, selectedSiteId, selectedTextId, selectedLinearId, selectedRecombId
+                selectedItems: JSON.parse(JSON.stringify(selectedItems))
             };
 
             history.push(state);
@@ -341,8 +383,7 @@
             plasmidX = state.plasmidX !== undefined ? state.plasmidX : DEFAULT_CENTER;
             plasmidY = state.plasmidY !== undefined ? state.plasmidY : DEFAULT_CENTER;
             
-            selectedGeneId = state.selectedGeneId; selectedSiteId = state.selectedSiteId;
-            selectedTextId = state.selectedTextId; selectedLinearId = state.selectedLinearId; selectedRecombId = state.selectedRecombId;
+            selectedItems = state.selectedItems ? JSON.parse(JSON.stringify(state.selectedItems)) : [];
 
             historyIndex = index;
             renderTabs(); renderSelection(); drawMap(); isRestoring = false;
@@ -363,6 +404,51 @@
             return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
         }
 
+        // 制限酵素のオフセットに応じた線・テキスト位置計算ヘルパー（内外同じ長さ伸び、線端と名前の距離を一定に保つ）
+        function getSiteMetrics(site, thickness) {
+            let userOffset = site.textOffset !== undefined ? site.textOffset : 15;
+            if (site.cutType === "none" && site.textOffset === undefined) userOffset = 5;
+
+            if (site.cutType === "none") {
+                return { lineProtrusion: 0, textGap: userOffset };
+            }
+
+            const baseGap = 5;
+            const baseProtrusion = Math.max(10, thickness * 0.4);
+            const delta = userOffset - 15;
+            const lineProtrusion = Math.max(0, baseProtrusion + delta);
+            const overflowNeg = Math.min(0, baseProtrusion + delta);
+            const textGap = Math.max(2, baseGap + overflowNeg);
+            return { lineProtrusion, textGap };
+        }
+
+        function getNextCutType(current) {
+            const cur = current || 'sticky';
+            if (cur === 'sticky') return 'blunt';
+            if (cur === 'blunt') return 'none';
+            return 'sticky';
+        }
+
+        function formatCutTypeLabel(type) {
+            const t = type || 'sticky';
+            if (t === 'blunt') return 'Blunt │';
+            if (t === 'none') return 'None';
+            return 'Sticky ⏋';
+        }
+
+        // 共通値の判定ヘルパー（複数選択時用）
+        function getCommonValue(arr, key) {
+            if (arr.length === 0) return "";
+            const first = arr[0][key];
+            return arr.every(item => item[key] === first) ? first : "";
+        }
+
+        function hasCommonValue(arr, key) {
+            if (arr.length === 0) return false;
+            const first = arr[0][key];
+            return arr.every(item => item[key] === first);
+        }
+
         window.toggleGeneShape = function(id) {
             const obj = genesData.find(o => o.id === id);
             if (obj) {
@@ -379,111 +465,455 @@
             }
         };
 
+        window.toggleSiteCutType = function(id) {
+            const obj = sitesData.find(o => o.id === id);
+            if (obj) {
+                obj.cutType = getNextCutType(obj.cutType);
+                renderSelection(); drawMap(); saveState();
+            }
+        };
+
+        window.toggleRecombType = function(id) {
+            const obj = recombsData.find(o => o.id === id);
+            if (obj) {
+                obj.type = obj.type === 'cross' ? 'polygon' : 'cross';
+                renderSelection(); drawMap(); saveState();
+            }
+        };
+
+        // 複数選択一括操作用グローバル関数
+        window.batchUpdateGenes = function(key, value, rerender = false) {
+            const ids = getSelectedIds('gene');
+            genesData.forEach(g => {
+                if (!ids.includes(g.id)) return;
+                if (key === 'start' || key === 'end') g[key] = Number(value);
+                else if (key === 'fontSize') g[key] = value === '' ? '' : Number(value);
+                else g[key] = value;
+            });
+            if (rerender) renderSelection();
+            drawMap();
+        };
+
+        window.batchToggleGeneShape = function() {
+            const ids = getSelectedIds('gene');
+            const targets = genesData.filter(g => ids.includes(g.id));
+            if (targets.length === 0) return;
+            const nextShape = targets[0].shape === 'arrow' ? 'box' : 'arrow';
+            targets.forEach(g => g.shape = nextShape);
+            renderSelection(); drawMap(); saveState();
+        };
+
+        window.batchToggleGeneDir = function() {
+            const ids = getSelectedIds('gene');
+            const targets = genesData.filter(g => ids.includes(g.id));
+            if (targets.length === 0) return;
+            const nextDir = targets[0].dir === 'forward' ? 'reverse' : 'forward';
+            targets.forEach(g => g.dir = nextDir);
+            renderSelection(); drawMap(); saveState();
+        };
+
+        window.batchToggleSiteCutType = function() {
+            const ids = getSelectedIds('site');
+            const targets = sitesData.filter(s => ids.includes(s.id));
+            if (targets.length === 0) return;
+            const nextType = getNextCutType(targets[0].cutType);
+            targets.forEach(s => s.cutType = nextType);
+            renderSelection(); drawMap(); saveState();
+        };
+
+        window.batchToggleRecombType = function() {
+            const ids = getSelectedIds('recomb');
+            const targets = recombsData.filter(r => ids.includes(r.id));
+            if (targets.length === 0) return;
+            const nextType = targets[0].type === 'cross' ? 'polygon' : 'cross';
+            targets.forEach(r => r.type = nextType);
+            renderSelection(); drawMap(); saveState();
+        };
+
+        window.batchUpdateSites = function(key, value) {
+            const ids = getSelectedIds('site');
+            sitesData.forEach(s => {
+                if (!ids.includes(s.id)) return;
+                if (key === 'bp' || key === 'textOffset' || key === 'lineWidth') s[key] = Number(value);
+                else if (key === 'fontSize') s[key] = value === '' ? '' : Number(value);
+                else s[key] = value;
+            });
+            drawMap();
+        };
+
+        window.batchUpdateTexts = function(key, value) {
+            const ids = getSelectedIds('text');
+            textsData.forEach(t => {
+                if (!ids.includes(t.id)) return;
+                t[key] = (key === 'fontSize' || key === 'x' || key === 'y') ? Number(value) : value;
+            });
+            drawMap();
+        };
+
+        window.batchUpdateLinears = function(key, value) {
+            const ids = getSelectedIds('linear');
+            linearsData.forEach(l => {
+                if (!ids.includes(l.id)) return;
+                l[key] = (key === 'width' || key === 'thickness' || key === 'bpLength') ? Number(value) : value;
+            });
+            drawMap();
+        };
+
+        window.batchUpdateRecombs = function(key, value) {
+            const ids = getSelectedIds('recomb');
+            recombsData.forEach(r => {
+                if (!ids.includes(r.id)) return;
+                r[key] = value;
+            });
+            drawMap();
+        };
+
+        window.batchUpdateAllColor = function(colorValue) {
+            selectedItems.forEach(item => {
+                if (item.type === 'gene') { const g = genesData.find(x => x.id === item.id); if (g) g.color = colorValue; }
+                else if (item.type === 'site') { const s = sitesData.find(x => x.id === item.id); if (s) s.color = colorValue; }
+                else if (item.type === 'text') { const t = textsData.find(x => x.id === item.id); if (t) t.color = colorValue; }
+                else if (item.type === 'linear') { const l = linearsData.find(x => x.id === item.id); if (l) l.color = colorValue; }
+                else if (item.type === 'recomb') { const r = recombsData.find(x => x.id === item.id); if (r) r.color = colorValue; }
+            });
+            drawMap();
+        };
+
+        window.batchUpdateAllFontSize = function(val) {
+            const parsed = val === '' ? '' : Number(val);
+            selectedItems.forEach(item => {
+                if (item.type === 'gene') { const g = genesData.find(x => x.id === item.id); if (g) g.fontSize = parsed; }
+                else if (item.type === 'site') { const s = sitesData.find(x => x.id === item.id); if (s) s.fontSize = parsed; }
+                else if (item.type === 'text' && parsed !== '') { const t = textsData.find(x => x.id === item.id); if (t) t.fontSize = parsed; }
+            });
+            drawMap();
+        };
+
+        window.batchToggleAllItalic = function() {
+            let textLikeObjs = [];
+            selectedItems.forEach(item => {
+                if (item.type === 'gene') { const g = genesData.find(x => x.id === item.id); if (g) textLikeObjs.push(g); }
+                else if (item.type === 'site') { const s = sitesData.find(x => x.id === item.id); if (s) textLikeObjs.push(s); }
+                else if (item.type === 'text') { const t = textsData.find(x => x.id === item.id); if (t) textLikeObjs.push(t); }
+            });
+            if (textLikeObjs.length === 0) return;
+            const nextVal = !textLikeObjs[0].isItalic;
+            textLikeObjs.forEach(o => o.isItalic = nextVal);
+            renderSelection(); drawMap(); saveState();
+        };
+
+        window.deleteSelectedItems = function() {
+            if (selectedItems.length === 0) return;
+            const geneIds = getSelectedIds('gene');
+            const siteIds = getSelectedIds('site');
+            const textIds = getSelectedIds('text');
+            const linearIds = getSelectedIds('linear');
+            const recombIds = getSelectedIds('recomb');
+
+            if (linearIds.length > 0) {
+                linearsData = linearsData.filter(l => !linearIds.includes(l.id));
+                const linearTargets = linearIds.map(id => "linear_" + id);
+                genesData = genesData.filter(g => !linearTargets.includes(g.target));
+                sitesData = sitesData.filter(s => !linearTargets.includes(s.target));
+            }
+            if (geneIds.length > 0) genesData = genesData.filter(g => !geneIds.includes(g.id));
+            if (siteIds.length > 0) sitesData = sitesData.filter(s => !siteIds.includes(s.id));
+            if (textIds.length > 0) textsData = textsData.filter(t => !textIds.includes(t.id));
+            if (recombIds.length > 0) recombsData = recombsData.filter(r => !recombIds.includes(r.id));
+
+            clearSelection();
+            renderSelection();
+            drawMap();
+            saveState();
+        };
+
+        function escapeHtml(str) {
+            if (str === undefined || str === null) return "";
+            return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
         function renderSelection() {
+            pruneInvalidSelections();
             selectionContainer.innerHTML = "";
-            if (selectedGeneId !== null) {
-                const gene = genesData.find(g => g.id === selectedGeneId);
-                if (!gene) return;
-                const targetText = gene.target === "plasmid" ? "Plasmid" : "Linear DNA";
+
+            if (selectedItems.length === 0) {
+                selectionContainer.innerHTML = '<p style="color: #aaa; font-size: 13px; line-height: 1.5; padding: 10px; background: #222; border-radius: 5px; border: 1px solid #444;">Click an object on the canvas to view properties.<br><span style="font-size: 11px; color: #888;">(Drag on empty canvas or Shift + Click to select multiple)</span></p>';
+                return;
+            }
+
+            // 単一選択の場合
+            if (selectedItems.length === 1) {
+                const item = selectedItems[0];
+                if (item.type === 'gene') {
+                    const gene = genesData.find(g => g.id === item.id);
+                    if (!gene) return;
+                    const targetText = gene.target === "plasmid" ? "Plasmid" : "Linear DNA";
+                    const div = document.createElement("div"); div.className = "gene-block";
+                    const shapeText = gene.shape === 'arrow' ? 'Arrow ➔' : 'Box ◼';
+                    const dirText = gene.dir === 'forward' ? 'Forward ⟳' : 'Reverse ⟲';
+                    
+                    div.innerHTML = `
+                        <div style="font-size: 12px; color: #64b5f6; font-weight: bold; margin-bottom: 8px;">Gene (on ${targetText})</div>
+                        <div class="input-group"><input type="text" value="${escapeHtml(gene.name)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'name', this.value)" style="font-weight: bold;"></div>
+                        <div class="input-group" style="display: flex; gap: 8px;">
+                            <div style="flex: 1;"><label>Start (bp)</label><input type="number" value="${Math.round(gene.start)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'start', this.value)"></div>
+                            <div style="flex: 1;"><label>End (bp)</label><input type="number" value="${Math.round(gene.end)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'end', this.value)"></div>
+                        </div>
+                        <div class="input-group" style="display: flex; gap: 8px;">
+                            <div style="flex: 1;"><label>Shape</label><button class="btn-toggle" onclick="toggleGeneShape(${gene.id})">${shapeText}</button></div>
+                            <div style="flex: 1;"><label>Direction</label><button class="btn-toggle" onclick="toggleGeneDir(${gene.id})" ${gene.shape === 'box' ? 'disabled' : ''}>${dirText}</button></div>
+                            <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${gene.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateGene(${gene.id}, 'fontSize', this.value)"></div>
+                        </div>
+                        <div class="input-group" style="display: flex; gap: 8px;">
+                            <div style="flex: 1;"><label>Color</label><input type="color" value="${gene.color}" onchange="saveState()" oninput="updateGene(${gene.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                            <div style="flex: 1;"><label style="display: flex; justify-content: space-between; align-items: center;"><span>Text Color</span><span style="font-size: 11px; font-weight: normal;"><input type="checkbox" ${gene.autoTextColor ? "checked" : ""} onchange="updateGene(${gene.id}, 'autoTextColor', this.checked); saveState();"> Auto</span></label><input type="color" value="${gene.textColor}" onchange="saveState()" oninput="updateGene(${gene.id}, 'textColor', this.value)" style="height: 35px; padding: 0;" ${gene.autoTextColor ? "disabled" : ""}></div>
+                        </div>
+                        <button class="delete-btn" onclick="deleteGene(${gene.id})">Delete Gene</button>
+                    `;
+                    selectionContainer.appendChild(div);
+                } 
+                else if (item.type === 'site') {
+                    const site = sitesData.find(s => s.id === item.id);
+                    if (!site) return;
+                    const targetText = site.target === "plasmid" ? "Plasmid" : "Linear DNA";
+                    const div = document.createElement("div"); div.className = "site-block";
+                    const currentOffset = site.textOffset !== undefined ? site.textOffset : 15;
+                    const currentLineWidth = site.lineWidth !== undefined ? site.lineWidth : 2;
+                    div.innerHTML = `
+                        <div style="font-size: 12px; color: #ffb74d; font-weight: bold; margin-bottom: 8px;">Restriction Site (on ${targetText})</div>
+                        <div class="input-group"><label>Enzyme Name</label><input type="text" value="${escapeHtml(site.name)}" onchange="saveState()" oninput="updateSite(${site.id}, 'name', this.value)" style="font-weight: bold; font-family: sans-serif;"></div>
+                        <div class="input-group" style="display: flex; gap: 8px;">
+                            <div style="flex: 1.1;"><label>Pos (bp)</label><input type="number" value="${Math.round(site.bp)}" onchange="saveState()" oninput="updateSite(${site.id}, 'bp', this.value)"></div>
+                            <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${site.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateSite(${site.id}, 'fontSize', this.value)"></div>
+                            <div style="flex: 1;"><label>Offset</label><input type="number" value="${currentOffset}" onchange="saveState()" oninput="updateSite(${site.id}, 'textOffset', this.value)"></div>
+                        </div>
+                        <div class="input-group" style="display: flex; gap: 8px;">
+                            <div style="flex: 1.4;"><label>Cut Type</label><button class="btn-toggle" onclick="toggleSiteCutType(${site.id})">${formatCutTypeLabel(site.cutType)}</button></div>
+                            <div style="flex: 1.1;"><label>Line Width</label><input type="number" value="${currentLineWidth}" onchange="saveState()" oninput="updateSite(${site.id}, 'lineWidth', this.value)" min="1"></div>
+                            <div style="flex: 1;"><label>Color</label><input type="color" value="${site.color || '#ff0000'}" onchange="saveState()" oninput="updateSite(${site.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        </div>
+                        <button class="delete-btn" onclick="deleteSite(${site.id})">Delete Site</button>
+                    `;
+                    selectionContainer.appendChild(div);
+                } 
+                else if (item.type === 'text') {
+                    const t = textsData.find(x => x.id === item.id);
+                    if (!t) return;
+                    const div = document.createElement("div"); div.className = "text-block";
+                    div.innerHTML = `
+                        <div style="font-size: 12px; color: #ba68c8; font-weight: bold; margin-bottom: 8px;">Free Text</div>
+                        <div class="input-group"><label>Text Content</label><input type="text" value="${escapeHtml(t.text)}" onchange="saveState()" oninput="updateText(${t.id}, 'text', this.value)"></div>
+                        <div class="input-group" style="display: flex; gap: 10px;">
+                            <div style="flex: 1;"><label>Font Size</label><input type="number" value="${t.fontSize}" onchange="saveState()" oninput="updateText(${t.id}, 'fontSize', this.value)"></div>
+                            <div style="flex: 1;"><label>Color</label><input type="color" value="${t.color}" onchange="saveState()" oninput="updateText(${t.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        </div>
+                        <button class="delete-btn" onclick="deleteText(${t.id})">Delete Text</button>
+                    `;
+                    selectionContainer.appendChild(div);
+                }
+                else if (item.type === 'linear') {
+                    const l = linearsData.find(x => x.id === item.id);
+                    if (!l) return;
+                    const div = document.createElement("div"); div.className = "linear-block";
+                    div.innerHTML = `
+                        <div style="font-size: 12px; color: #4db6ac; font-weight: bold; margin-bottom: 8px;">Linear DNA</div>
+                        <div class="input-group"><label>Name</label><input type="text" value="${escapeHtml(l.name)}" onchange="saveState()" oninput="updateLinear(${l.id}, 'name', this.value)"></div>
+                        <div class="input-group" style="display: flex; gap: 10px;">
+                            <div style="flex: 1.2;"><label>Total bp</label><input type="number" value="${l.bpLength}" onchange="saveState()" oninput="updateLinear(${l.id}, 'bpLength', this.value)"></div>
+                            <div style="flex: 1;"><label>Width (px)</label><input type="number" value="${l.width}" onchange="saveState()" oninput="updateLinear(${l.id}, 'width', this.value)"></div>
+                            <div style="flex: 1;"><label>Thickness</label><input type="number" value="${l.thickness}" onchange="saveState()" oninput="updateLinear(${l.id}, 'thickness', this.value)"></div>
+                        </div>
+                        <div class="input-group"><label>Color</label><input type="color" value="${l.color}" onchange="saveState()" oninput="updateLinear(${l.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <button class="delete-btn" onclick="deleteLinear(${l.id})">Delete Linear DNA</button>
+                    `;
+                    selectionContainer.appendChild(div);
+                }
+                else if (item.type === 'recomb') {
+                    const r = recombsData.find(x => x.id === item.id);
+                    if (!r) return;
+                    const typeText = r.type === 'cross' ? 'Cross (X-Lines) ✕' : 'Polygon (Highlight) ▱';
+                    const div = document.createElement("div"); div.className = "recomb-block";
+                    div.innerHTML = `
+                        <div style="font-size: 12px; color: #f06292; font-weight: bold; margin-bottom: 8px;">Recombination</div>
+                        <div class="input-group" style="display: flex; gap: 10px;">
+                            <div style="flex: 2;"><label>Type</label><button class="btn-toggle" onclick="toggleRecombType(${r.id})">${typeText}</button></div>
+                            <div style="flex: 1;"><label>Color</label><input type="color" value="${r.color}" onchange="saveState()" oninput="updateRecomb(${r.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        </div>
+                        <p style="font-size: 11px; color: #aaa; margin-top: 5px;">Click Type button or double-click on canvas to switch style.</p>
+                        <button class="delete-btn" onclick="deleteRecomb(${r.id})">Delete Recombination</button>
+                    `;
+                    selectionContainer.appendChild(div);
+                }
+                return;
+            }
+
+            // 複数選択時のパネル構築
+            const selGenes = genesData.filter(g => isSelectedItem('gene', g.id));
+            const selSites = sitesData.filter(s => isSelectedItem('site', s.id));
+            const selTexts = textsData.filter(t => isSelectedItem('text', t.id));
+            const selLinears = linearsData.filter(l => isSelectedItem('linear', l.id));
+            const selRecombs = recombsData.filter(r => isSelectedItem('recomb', r.id));
+
+            const typesPresent = [
+                selGenes.length > 0 ? 'gene' : null,
+                selSites.length > 0 ? 'site' : null,
+                selTexts.length > 0 ? 'text' : null,
+                selLinears.length > 0 ? 'linear' : null,
+                selRecombs.length > 0 ? 'recomb' : null
+            ].filter(Boolean);
+
+            if (typesPresent.length > 1) {
+                const allObjs = [...selGenes, ...selSites, ...selTexts, ...selLinears, ...selRecombs];
+                const repColor = allObjs[0]?.color || '#2196F3';
+                const textLike = [...selGenes, ...selSites, ...selTexts];
+                const commonFs = hasCommonValue(textLike, 'fontSize') ? getCommonValue(textLike, 'fontSize') : '';
+                const isItalicCommon = textLike.length > 0 && textLike.every(o => o.isItalic);
+
+                const commonDiv = document.createElement("div");
+                commonDiv.className = "multi-block";
+                commonDiv.innerHTML = `
+                    <div style="font-size: 12px; color: #90caf9; font-weight: bold; margin-bottom: 8px;">
+                        Multiple Items Selected (${selectedItems.length} items)
+                    </div>
+                    <div class="input-group" style="display: flex; gap: 8px;">
+                        <div style="flex: 1;">
+                            <label>All Colors</label>
+                            <input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateAllColor(this.value)" style="height: 35px; padding: 0;">
+                        </div>
+                        ${textLike.length > 0 ? `
+                        <div style="flex: 1;">
+                            <label>Font Size</label>
+                            <input type="number" value="${commonFs}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateAllFontSize(this.value)">
+                        </div>
+                        <div style="flex: 1;">
+                            <label>Style</label>
+                            <button class="btn-toggle" onclick="batchToggleAllItalic()">${isItalicCommon ? 'Italic 𝑰' : 'Normal'}</button>
+                        </div>` : ''}
+                    </div>
+                `;
+                selectionContainer.appendChild(commonDiv);
+            }
+
+            if (selGenes.length > 0) {
+                const commonName = hasCommonValue(selGenes, 'name') ? getCommonValue(selGenes, 'name') : '';
+                const commonStart = hasCommonValue(selGenes, 'start') ? Math.round(getCommonValue(selGenes, 'start')) : '';
+                const commonEnd = hasCommonValue(selGenes, 'end') ? Math.round(getCommonValue(selGenes, 'end')) : '';
+                const commonFs = hasCommonValue(selGenes, 'fontSize') ? getCommonValue(selGenes, 'fontSize') : '';
+                const repColor = selGenes[0].color || '#2196F3';
+                const repTextColor = selGenes[0].textColor || '#ffffff';
+                const allAutoText = selGenes.every(g => g.autoTextColor);
+                const allBox = selGenes.every(g => g.shape === 'box');
+                const shapeLabel = hasCommonValue(selGenes, 'shape') ? (selGenes[0].shape === 'arrow' ? 'Arrow ➔' : 'Box ◼') : 'Mixed';
+                const dirLabel = hasCommonValue(selGenes, 'dir') ? (selGenes[0].dir === 'forward' ? 'Forward ⟳' : 'Reverse ⟲') : 'Mixed';
+
                 const div = document.createElement("div"); div.className = "gene-block";
-                
-                const shapeText = gene.shape === 'arrow' ? 'Arrow ➔' : 'Box ◼';
-                const dirText = gene.dir === 'forward' ? 'Forward ⟳' : 'Reverse ⟲';
-                
                 div.innerHTML = `
-                    <div style="font-size: 12px; color: #64b5f6; font-weight: bold; margin-bottom: 8px;">Gene (on ${targetText})</div>
-                    <div class="input-group"><input type="text" value="${gene.name}" onchange="saveState()" oninput="updateGene(${gene.id}, 'name', this.value)" style="font-weight: bold;"></div>
+                    <div style="font-size: 12px; color: #64b5f6; font-weight: bold; margin-bottom: 8px;">Genes (${selGenes.length} selected)</div>
+                    <div class="input-group"><label>Name</label><input type="text" value="${escapeHtml(commonName)}" placeholder="${commonName === '' ? 'Mixed (type to set all)' : ''}" onchange="saveState()" oninput="batchUpdateGenes('name', this.value)" style="font-weight: bold;"></div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1;"><label>Start (bp)</label><input type="number" value="${Math.round(gene.start)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'start', this.value)"></div>
-                        <div style="flex: 1;"><label>End (bp)</label><input type="number" value="${Math.round(gene.end)}" onchange="saveState()" oninput="updateGene(${gene.id}, 'end', this.value)"></div>
+                        <div style="flex: 1;"><label>Start (bp)</label><input type="number" value="${commonStart}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateGenes('start', this.value)"></div>
+                        <div style="flex: 1;"><label>End (bp)</label><input type="number" value="${commonEnd}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateGenes('end', this.value)"></div>
                     </div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1;"><label>Shape</label><button class="btn-toggle" onclick="toggleGeneShape(${gene.id})">${shapeText}</button></div>
-                        <div style="flex: 1;"><label>Direction</label><button class="btn-toggle" onclick="toggleGeneDir(${gene.id})" ${gene.shape === 'box' ? 'disabled' : ''}>${dirText}</button></div>
-                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${gene.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateGene(${gene.id}, 'fontSize', this.value)"></div>
+                        <div style="flex: 1;"><label>Shape</label><button class="btn-toggle" onclick="batchToggleGeneShape()">${shapeLabel}</button></div>
+                        <div style="flex: 1;"><label>Direction</label><button class="btn-toggle" onclick="batchToggleGeneDir()" ${allBox ? 'disabled' : ''}>${dirLabel}</button></div>
+                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${commonFs}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateGenes('fontSize', this.value)"></div>
                     </div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1;"><label>Color</label><input type="color" value="${gene.color}" onchange="saveState()" oninput="updateGene(${gene.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
-                        <div style="flex: 1;"><label style="display: flex; justify-content: space-between; align-items: center;"><span>Text Color</span><span style="font-size: 11px; font-weight: normal;"><input type="checkbox" ${gene.autoTextColor ? "checked" : ""} onchange="updateGene(${gene.id}, 'autoTextColor', this.checked); saveState();"> Auto</span></label><input type="color" value="${gene.textColor}" onchange="saveState()" oninput="updateGene(${gene.id}, 'textColor', this.value)" style="height: 35px; padding: 0;" ${gene.autoTextColor ? "disabled" : ""}></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateGenes('color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <div style="flex: 1;"><label style="display: flex; justify-content: space-between; align-items: center;"><span>Text Color</span><span style="font-size: 11px; font-weight: normal;"><input type="checkbox" ${allAutoText ? "checked" : ""} onchange="batchUpdateGenes('autoTextColor', this.checked, true); saveState();"> Auto</span></label><input type="color" value="${repTextColor}" onchange="saveState()" oninput="batchUpdateGenes('textColor', this.value)" style="height: 35px; padding: 0;" ${allAutoText ? "disabled" : ""}></div>
                     </div>
-                    <button class="delete-btn" onclick="deleteGene(${gene.id})">Delete Gene</button>
                 `;
                 selectionContainer.appendChild(div);
-            } 
-            else if (selectedSiteId !== null) {
-                const site = sitesData.find(s => s.id === selectedSiteId);
-                if (!site) return;
-                const targetText = site.target === "plasmid" ? "Plasmid" : "Linear DNA";
+            }
+
+            if (selSites.length > 0) {
+                const commonName = hasCommonValue(selSites, 'name') ? getCommonValue(selSites, 'name') : '';
+                const commonBp = hasCommonValue(selSites, 'bp') ? Math.round(getCommonValue(selSites, 'bp')) : '';
+                const commonFs = hasCommonValue(selSites, 'fontSize') ? getCommonValue(selSites, 'fontSize') : '';
+                const commonOffset = hasCommonValue(selSites, 'textOffset') ? (selSites[0].textOffset !== undefined ? selSites[0].textOffset : 15) : '';
+                const commonLineW = hasCommonValue(selSites, 'lineWidth') ? (selSites[0].lineWidth !== undefined ? selSites[0].lineWidth : 2) : '';
+                const cutLabel = hasCommonValue(selSites, 'cutType') ? formatCutTypeLabel(selSites[0].cutType) : 'Mixed';
+                const repColor = selSites[0].color || '#ff0000';
+
                 const div = document.createElement("div"); div.className = "site-block";
-                const currentOffset = site.textOffset !== undefined ? site.textOffset : 15;
-                const currentLineWidth = site.lineWidth !== undefined ? site.lineWidth : 2;
                 div.innerHTML = `
-                    <div style="font-size: 12px; color: #ffb74d; font-weight: bold; margin-bottom: 8px;">Restriction Site (on ${targetText})</div>
-                    <div class="input-group"><label>Enzyme Name</label><input type="text" value="${site.name}" onchange="saveState()" oninput="updateSite(${site.id}, 'name', this.value)" style="font-weight: bold; font-family: sans-serif;"></div>
+                    <div style="font-size: 12px; color: #ffb74d; font-weight: bold; margin-bottom: 8px;">Restriction Sites (${selSites.length} selected)</div>
+                    <div class="input-group"><label>Enzyme Name</label><input type="text" value="${escapeHtml(commonName)}" placeholder="${commonName === '' ? 'Mixed (type to set all)' : ''}" onchange="saveState()" oninput="batchUpdateSites('name', this.value)" style="font-weight: bold;"></div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1.1;"><label>Pos (bp)</label><input type="number" value="${Math.round(site.bp)}" onchange="saveState()" oninput="updateSite(${site.id}, 'bp', this.value)"></div>
-                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${site.fontSize || ''}" placeholder="Global" onchange="saveState()" oninput="updateSite(${site.id}, 'fontSize', this.value)"></div>
-                        <div style="flex: 1;"><label>Offset</label><input type="number" value="${currentOffset}" onchange="saveState()" oninput="updateSite(${site.id}, 'textOffset', this.value)"></div>
+                        <div style="flex: 1.1;"><label>Pos (bp)</label><input type="number" value="${commonBp}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateSites('bp', this.value)"></div>
+                        <div style="flex: 1.2;"><label>Font Size</label><input type="number" value="${commonFs}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateSites('fontSize', this.value)"></div>
+                        <div style="flex: 1;"><label>Offset</label><input type="number" value="${commonOffset}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateSites('textOffset', this.value)"></div>
                     </div>
                     <div class="input-group" style="display: flex; gap: 8px;">
-                        <div style="flex: 1.5;"><label>Cut Type</label><select onchange="updateSite(${site.id}, 'cutType', this.value); saveState();"><option value="sticky" ${(!site.cutType || site.cutType === "sticky") ? "selected" : ""}>Sticky ends</option><option value="blunt" ${site.cutType === "blunt" ? "selected" : ""}>Blunt ends</option><option value="none" ${site.cutType === "none" ? "selected" : ""}>None (Hide Line)</option></select></div>
-                        <div style="flex: 1;"><label>Line Width</label><input type="number" value="${currentLineWidth}" onchange="saveState()" oninput="updateSite(${site.id}, 'lineWidth', this.value)" min="1"></div>
-                        <div style="flex: 1;"><label>Color</label><input type="color" value="${site.color || '#ff0000'}" onchange="saveState()" oninput="updateSite(${site.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <div style="flex: 1.4;"><label>Cut Type</label><button class="btn-toggle" onclick="batchToggleSiteCutType()">${cutLabel}</button></div>
+                        <div style="flex: 1.1;"><label>Line Width</label><input type="number" value="${commonLineW}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateSites('lineWidth', this.value)" min="1"></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateSites('color', this.value)" style="height: 35px; padding: 0;"></div>
                     </div>
-                    <button class="delete-btn" onclick="deleteSite(${site.id})">Delete Site</button>
                 `;
                 selectionContainer.appendChild(div);
-            } 
-            else if (selectedTextId !== null) {
-                const t = textsData.find(x => x.id === selectedTextId);
-                if (!t) return;
+            }
+
+            if (selTexts.length > 0) {
+                const commonText = hasCommonValue(selTexts, 'text') ? getCommonValue(selTexts, 'text') : '';
+                const commonFs = hasCommonValue(selTexts, 'fontSize') ? getCommonValue(selTexts, 'fontSize') : '';
+                const repColor = selTexts[0].color || '#000000';
+
                 const div = document.createElement("div"); div.className = "text-block";
                 div.innerHTML = `
-                    <div style="font-size: 12px; color: #ba68c8; font-weight: bold; margin-bottom: 8px;">Free Text</div>
-                    <div class="input-group"><label>Text Content</label><input type="text" value="${t.text}" onchange="saveState()" oninput="updateText(${t.id}, 'text', this.value)"></div>
+                    <div style="font-size: 12px; color: #ba68c8; font-weight: bold; margin-bottom: 8px;">Free Texts (${selTexts.length} selected)</div>
+                    <div class="input-group"><label>Text Content</label><input type="text" value="${escapeHtml(commonText)}" placeholder="${commonText === '' ? 'Mixed (type to set all)' : ''}" onchange="saveState()" oninput="batchUpdateTexts('text', this.value)"></div>
                     <div class="input-group" style="display: flex; gap: 10px;">
-                        <div style="flex: 1;"><label>Font Size</label><input type="number" value="${t.fontSize}" onchange="saveState()" oninput="updateText(${t.id}, 'fontSize', this.value)"></div>
-                        <div style="flex: 1;"><label>Color</label><input type="color" value="${t.color}" onchange="saveState()" oninput="updateText(${t.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <div style="flex: 1;"><label>Font Size</label><input type="number" value="${commonFs}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateTexts('fontSize', this.value)"></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateTexts('color', this.value)" style="height: 35px; padding: 0;"></div>
                     </div>
-                    <button class="delete-btn" onclick="deleteText(${t.id})">Delete Text</button>
                 `;
                 selectionContainer.appendChild(div);
             }
-            else if (selectedLinearId !== null) {
-                const l = linearsData.find(x => x.id === selectedLinearId);
-                if (!l) return;
+
+            if (selLinears.length > 0) {
+                const commonName = hasCommonValue(selLinears, 'name') ? getCommonValue(selLinears, 'name') : '';
+                const commonBp = hasCommonValue(selLinears, 'bpLength') ? getCommonValue(selLinears, 'bpLength') : '';
+                const commonW = hasCommonValue(selLinears, 'width') ? getCommonValue(selLinears, 'width') : '';
+                const commonTh = hasCommonValue(selLinears, 'thickness') ? getCommonValue(selLinears, 'thickness') : '';
+                const repColor = selLinears[0].color || '#000000';
+
                 const div = document.createElement("div"); div.className = "linear-block";
                 div.innerHTML = `
-                    <div style="font-size: 12px; color: #4db6ac; font-weight: bold; margin-bottom: 8px;">Linear DNA</div>
-                    <div class="input-group"><label>Name</label><input type="text" value="${l.name}" onchange="saveState()" oninput="updateLinear(${l.id}, 'name', this.value)"></div>
+                    <div style="font-size: 12px; color: #4db6ac; font-weight: bold; margin-bottom: 8px;">Linear DNAs (${selLinears.length} selected)</div>
+                    <div class="input-group"><label>Name</label><input type="text" value="${escapeHtml(commonName)}" placeholder="${commonName === '' ? 'Mixed (type to set all)' : ''}" onchange="saveState()" oninput="batchUpdateLinears('name', this.value)"></div>
                     <div class="input-group" style="display: flex; gap: 10px;">
-                        <div style="flex: 1.2;"><label>Total bp</label><input type="number" value="${l.bpLength}" onchange="saveState()" oninput="updateLinear(${l.id}, 'bpLength', this.value)"></div>
-                        <div style="flex: 1;"><label>Width (px)</label><input type="number" value="${l.width}" onchange="saveState()" oninput="updateLinear(${l.id}, 'width', this.value)"></div>
-                        <div style="flex: 1;"><label>Thickness</label><input type="number" value="${l.thickness}" onchange="saveState()" oninput="updateLinear(${l.id}, 'thickness', this.value)"></div>
+                        <div style="flex: 1.2;"><label>Total bp</label><input type="number" value="${commonBp}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateLinears('bpLength', this.value)"></div>
+                        <div style="flex: 1;"><label>Width (px)</label><input type="number" value="${commonW}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateLinears('width', this.value)"></div>
+                        <div style="flex: 1;"><label>Thickness</label><input type="number" value="${commonTh}" placeholder="Mixed" onchange="saveState()" oninput="batchUpdateLinears('thickness', this.value)"></div>
                     </div>
-                    <div class="input-group"><label>Color</label><input type="color" value="${l.color}" onchange="saveState()" oninput="updateLinear(${l.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
-                    <button class="delete-btn" onclick="deleteLinear(${l.id})">Delete Linear DNA</button>
+                    <div class="input-group"><label>Color</label><input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateLinears('color', this.value)" style="height: 35px; padding: 0;"></div>
                 `;
                 selectionContainer.appendChild(div);
             }
-            else if (selectedRecombId !== null) {
-                const r = recombsData.find(x => x.id === selectedRecombId);
-                if (!r) return;
+
+            if (selRecombs.length > 0) {
+                const typeLabel = hasCommonValue(selRecombs, 'type')
+                    ? (selRecombs[0].type === 'cross' ? 'Cross (X-Lines) ✕' : 'Polygon (Highlight) ▱')
+                    : 'Mixed';
+                const repColor = selRecombs[0].color || '#2196F3';
+
                 const div = document.createElement("div"); div.className = "recomb-block";
                 div.innerHTML = `
-                    <div style="font-size: 12px; color: #f06292; font-weight: bold; margin-bottom: 8px;">Recombination</div>
+                    <div style="font-size: 12px; color: #f06292; font-weight: bold; margin-bottom: 8px;">Recombinations (${selRecombs.length} selected)</div>
                     <div class="input-group" style="display: flex; gap: 10px;">
-                        <div style="flex: 2;"><label>Type</label><select onchange="updateRecomb(${r.id}, 'type', this.value); saveState();"><option value="polygon" ${r.type === "polygon" ? "selected" : ""}>Polygon (Highlight)</option><option value="cross" ${r.type === "cross" ? "selected" : ""}>Cross (X-Lines)</option></select></div>
-                        <div style="flex: 1;"><label>Color</label><input type="color" value="${r.color}" onchange="saveState()" oninput="updateRecomb(${r.id}, 'color', this.value)" style="height: 35px; padding: 0;"></div>
+                        <div style="flex: 2;"><label>Type</label><button class="btn-toggle" onclick="batchToggleRecombType()">${typeLabel}</button></div>
+                        <div style="flex: 1;"><label>Color</label><input type="color" value="${repColor}" onchange="saveState()" oninput="batchUpdateRecombs('color', this.value)" style="height: 35px; padding: 0;"></div>
                     </div>
-                    <p style="font-size: 11px; color: #aaa; margin-top: 5px;">Drag the 4 corner handles on the canvas to connect regions.</p>
-                    <button class="delete-btn" onclick="deleteRecomb(${r.id})">Delete Recombination</button>
                 `;
                 selectionContainer.appendChild(div);
             }
-            else {
-                selectionContainer.innerHTML = '<p style="color: #aaa; font-size: 13px; line-height: 1.5; padding: 10px; background: #222; border-radius: 5px; border: 1px solid #444;">Click an object on the canvas to view properties.</p>';
-            }
+
+            const delBtn = document.createElement("button");
+            delBtn.className = "delete-btn";
+            delBtn.textContent = `Delete All Selected (${selectedItems.length} items)`;
+            delBtn.onclick = deleteSelectedItems;
+            selectionContainer.appendChild(delBtn);
         }
 
         function updateGene(id, key, value) { const obj = genesData.find(o => o.id === id); if (obj) { if (key === 'start' || key === 'end') obj[key] = Number(value); else if (key === 'fontSize') obj[key] = value === '' ? '' : Number(value); else obj[key] = value; if (key === 'shape' || key === 'autoTextColor') renderSelection(); drawMap(); } }
@@ -492,26 +922,192 @@
         function updateLinear(id, key, value) { const obj = linearsData.find(o => o.id === id); if (obj) { obj[key] = (key === 'width' || key === 'thickness' || key === 'bpLength') ? Number(value) : value; drawMap(); } }
         function updateRecomb(id, key, value) { const obj = recombsData.find(o => o.id === id); if (obj) { obj[key] = value; drawMap(); } }
 
-        window.deleteGene = function(id) { genesData = genesData.filter(g => g.id !== id); if (selectedGeneId === id) selectedGeneId = null; renderSelection(); drawMap(); saveState(); };
-        window.deleteSite = function(id) { sitesData = sitesData.filter(s => s.id !== id); if (selectedSiteId === id) selectedSiteId = null; renderSelection(); drawMap(); saveState(); };
-        window.deleteText = function(id) { textsData = textsData.filter(t => t.id !== id); if (selectedTextId === id) selectedTextId = null; renderSelection(); drawMap(); saveState(); };
+        window.deleteGene = function(id) { genesData = genesData.filter(g => g.id !== id); selectedItems = selectedItems.filter(i => !(i.type === 'gene' && i.id === id)); renderSelection(); drawMap(); saveState(); };
+        window.deleteSite = function(id) { sitesData = sitesData.filter(s => s.id !== id); selectedItems = selectedItems.filter(i => !(i.type === 'site' && i.id === id)); renderSelection(); drawMap(); saveState(); };
+        window.deleteText = function(id) { textsData = textsData.filter(t => t.id !== id); selectedItems = selectedItems.filter(i => !(i.type === 'text' && i.id === id)); renderSelection(); drawMap(); saveState(); };
         window.deleteLinear = function(id) { 
             linearsData = linearsData.filter(l => l.id !== id);
             genesData = genesData.filter(g => g.target !== "linear_" + id); 
             sitesData = sitesData.filter(s => s.target !== "linear_" + id);
-            if (selectedLinearId === id) selectedLinearId = null; 
+            selectedItems = selectedItems.filter(i => !(i.type === 'linear' && i.id === id));
             renderSelection(); drawMap(); saveState(); 
         };
-        window.deleteRecomb = function(id) { recombsData = recombsData.filter(r => r.id !== id); if (selectedRecombId === id) selectedRecombId = null; renderSelection(); drawMap(); saveState(); };
+        window.deleteRecomb = function(id) { recombsData = recombsData.filter(r => r.id !== id); selectedItems = selectedItems.filter(i => !(i.type === 'recomb' && i.id === id)); renderSelection(); drawMap(); saveState(); };
 
-        function clearSelection() { selectedGeneId = null; selectedSiteId = null; selectedTextId = null; selectedLinearId = null; selectedRecombId = null; }
+        // コピー＆ペースト実装（Linear DNA選択時は載っている遺伝子・制限酵素サイトも自動コピー）
+        function copySelectedItems() {
+            if (selectedItems.length === 0) return;
+            clipboardItems = [];
+            const copiedKeys = new Set();
+
+            const pushToClipboard = (type, obj) => {
+                if (!obj) return;
+                const key = type + ':' + obj.id;
+                if (copiedKeys.has(key)) return;
+                copiedKeys.add(key);
+                clipboardItems.push({ type, data: JSON.parse(JSON.stringify(obj)) });
+            };
+
+            selectedItems.forEach(item => {
+                if (item.type === 'gene') {
+                    pushToClipboard('gene', genesData.find(g => g.id === item.id));
+                } else if (item.type === 'site') {
+                    pushToClipboard('site', sitesData.find(s => s.id === item.id));
+                } else if (item.type === 'text') {
+                    pushToClipboard('text', textsData.find(t => t.id === item.id));
+                } else if (item.type === 'linear') {
+                    const linearObj = linearsData.find(l => l.id === item.id);
+                    if (linearObj) {
+                        pushToClipboard('linear', linearObj);
+                        const targetStr = "linear_" + linearObj.id;
+                        genesData.filter(g => g.target === targetStr).forEach(g => pushToClipboard('gene', g));
+                        sitesData.filter(s => s.target === targetStr).forEach(s => pushToClipboard('site', s));
+                    }
+                } else if (item.type === 'recomb') {
+                    pushToClipboard('recomb', recombsData.find(r => r.id === item.id));
+                }
+            });
+            pasteCount = 0;
+        }
+
+        function pasteClipboardItems() {
+            if (clipboardItems.length === 0) return;
+            pasteCount++;
+            const newSelection = [];
+            const totalLength = Number(inputLength.value) || 5000;
+            const linearIdMap = {}; // 旧Linear ID -> 新Linear ID
+            const geneIdMap = {};   // 旧Gene ID -> 新Gene ID
+
+            // 1. まず Linear DNA を先に複製して ID マップを作る
+            clipboardItems.forEach(item => {
+                if (item.type === 'linear') {
+                    const newId = nextLinearId++;
+                    linearIdMap[item.data.id] = newId;
+                    const cloned = JSON.parse(JSON.stringify(item.data));
+                    cloned.id = newId;
+                    cloned.x += 20 * pasteCount;
+                    cloned.y += 30 * pasteCount;
+                    linearsData.push(cloned);
+                    newSelection.push({ type: 'linear', id: newId });
+                }
+            });
+
+            // 2. 遺伝子・制限酵素サイト・テキストを複製
+            clipboardItems.forEach(item => {
+                if (item.type === 'gene') {
+                    const newId = nextGeneId++;
+                    geneIdMap[item.data.id] = newId;
+                    const cloned = JSON.parse(JSON.stringify(item.data));
+                    cloned.id = newId;
+
+                    if (cloned.target && cloned.target.startsWith("linear_")) {
+                        const oldLId = parseInt(cloned.target.split("_")[1]);
+                        if (linearIdMap[oldLId] !== undefined) {
+                            cloned.target = "linear_" + linearIdMap[oldLId];
+                        } else {
+                            const l = linearsData.find(x => x.id === oldLId);
+                            if (l) {
+                                const shift = l.bpLength * 0.03 * pasteCount;
+                                const len = cloned.end - cloned.start;
+                                let newStart = cloned.start + shift;
+                                if (newStart + len > l.bpLength) newStart = Math.max(0, l.bpLength - len);
+                                cloned.start = newStart;
+                                cloned.end = newStart + len;
+                            } else {
+                                cloned.target = "plasmid";
+                            }
+                        }
+                    } else {
+                        const shift = totalLength * 0.03 * pasteCount;
+                        cloned.start = (((cloned.start + shift) % totalLength) + totalLength) % totalLength;
+                        cloned.end = (((cloned.end + shift) % totalLength) + totalLength) % totalLength;
+                    }
+
+                    genesData.push(cloned);
+                    newSelection.push({ type: 'gene', id: newId });
+                }
+                else if (item.type === 'site') {
+                    const newId = nextSiteId++;
+                    const cloned = JSON.parse(JSON.stringify(item.data));
+                    cloned.id = newId;
+
+                    if (cloned.target && cloned.target.startsWith("linear_")) {
+                        const oldLId = parseInt(cloned.target.split("_")[1]);
+                        if (linearIdMap[oldLId] !== undefined) {
+                            cloned.target = "linear_" + linearIdMap[oldLId];
+                        } else {
+                            const l = linearsData.find(x => x.id === oldLId);
+                            if (l) {
+                                const shift = l.bpLength * 0.03 * pasteCount;
+                                cloned.bp = Math.min(l.bpLength, cloned.bp + shift);
+                            } else {
+                                cloned.target = "plasmid";
+                            }
+                        }
+                    } else {
+                        const shift = totalLength * 0.03 * pasteCount;
+                        cloned.bp = (((cloned.bp + shift) % totalLength) + totalLength) % totalLength;
+                    }
+
+                    sitesData.push(cloned);
+                    newSelection.push({ type: 'site', id: newId });
+                }
+                else if (item.type === 'text') {
+                    const newId = nextTextId++;
+                    const cloned = JSON.parse(JSON.stringify(item.data));
+                    cloned.id = newId;
+                    cloned.x += 20 * pasteCount;
+                    cloned.y += 20 * pasteCount;
+                    textsData.push(cloned);
+                    newSelection.push({ type: 'text', id: newId });
+                }
+            });
+
+            // 3. Recombination の複製（スナップ先も一緒に複製されていれば追従）
+            clipboardItems.forEach(item => {
+                if (item.type === 'recomb') {
+                    const newId = nextRecombId++;
+                    const cloned = JSON.parse(JSON.stringify(item.data));
+                    cloned.id = newId;
+                    const offX = 20 * pasteCount;
+                    const offY = 30 * pasteCount;
+                    cloned.p1x += offX; cloned.p1y += offY;
+                    cloned.p2x += offX; cloned.p2y += offY;
+                    cloned.p3x += offX; cloned.p3y += offY;
+                    cloned.p4x += offX; cloned.p4y += offY;
+
+                    const newBinds = { p1: null, p2: null, p3: null, p4: null };
+                    if (cloned.binds) {
+                        ['p1', 'p2', 'p3', 'p4'].forEach(p => {
+                            const ref = cloned.binds[p];
+                            if (!ref) return;
+                            if (ref.type === 'linear' && linearIdMap[ref.id] !== undefined) {
+                                newBinds[p] = { ...ref, id: linearIdMap[ref.id] };
+                            } else if (ref.type === 'gene' && geneIdMap[ref.id] !== undefined) {
+                                newBinds[p] = { ...ref, id: geneIdMap[ref.id] };
+                            }
+                        });
+                    }
+                    cloned.binds = newBinds;
+                    recombsData.push(cloned);
+                    newSelection.push({ type: 'recomb', id: newId });
+                }
+            });
+
+            selectedItems = newSelection;
+            renderSelection();
+            drawMap();
+            saveState();
+        }
 
         btnAddGene.addEventListener("click", () => {
             const newId = nextGeneId++;
             let target = "plasmid", start = 0, end = 500;
-            if (selectedLinearId !== null) {
-                target = "linear_" + selectedLinearId;
-                const l = linearsData.find(x => x.id === selectedLinearId);
+            const selLinearIds = getSelectedIds('linear');
+            if (selLinearIds.length > 0) {
+                const targetLinearId = selLinearIds[0];
+                target = "linear_" + targetLinearId;
+                const l = linearsData.find(x => x.id === targetLinearId);
                 start = l ? l.bpLength * 0.1 : 0;
                 end = l ? l.bpLength * 0.3 : 500;
             } else if (!inputShowPlasmid.checked) {
@@ -524,16 +1120,18 @@
                     return;
                 }
             }
-            genesData.push({ id: newId, target, name: "New Gene", start, end, dir: "forward", shape: "arrow", color: "#2196F3", autoTextColor: true, textColor: "#ffffff", fontSize: "", isItalic: false });
-            clearSelection(); selectedGeneId = newId; renderSelection(); drawMap(); saveState();
+            genesData.push({ id: newId, target, name: "New Gene", start, end, dir: "forward", shape: "box", color: "#2196F3", autoTextColor: true, textColor: "#ffffff", fontSize: "", isItalic: false });
+            selectSingleItem('gene', newId); renderSelection(); drawMap(); saveState();
         });
 
         btnAddSite.addEventListener("click", () => {
             const newId = nextSiteId++;
             let target = "plasmid", bp = 0;
-            if (selectedLinearId !== null) {
-                target = "linear_" + selectedLinearId;
-                const l = linearsData.find(x => x.id === selectedLinearId);
+            const selLinearIds = getSelectedIds('linear');
+            if (selLinearIds.length > 0) {
+                const targetLinearId = selLinearIds[0];
+                target = "linear_" + targetLinearId;
+                const l = linearsData.find(x => x.id === targetLinearId);
                 bp = l ? l.bpLength * 0.5 : 500;
             } else if (!inputShowPlasmid.checked) {
                 if (linearsData.length > 0) {
@@ -545,43 +1143,43 @@
                 }
             }
             sitesData.push({ id: newId, target, name: "New Site", bp, fontSize: "", color: "#ff0000", cutType: "sticky", textOffset: 15, lineWidth: 2, isItalic: false });
-            clearSelection(); selectedSiteId = newId; renderSelection(); drawMap(); saveState();
+            selectSingleItem('site', newId); renderSelection(); drawMap(); saveState();
         });
 
         btnAddText.addEventListener("click", () => {
             const newId = nextTextId++;
             textsData.push({ id: newId, text: "Sample Text", x: plasmidX, y: plasmidY - 100, fontSize: 16, color: "#000000", isItalic: false });
-            clearSelection(); selectedTextId = newId; renderSelection(); drawMap(); saveState();
+            selectSingleItem('text', newId); renderSelection(); drawMap(); saveState();
         });
 
         btnAddLinear.addEventListener("click", () => {
             const newId = nextLinearId++;
             linearsData.push({ id: newId, name: "Genome DNA", bpLength: 5000, x: plasmidX - 200, y: plasmidY + 250, width: 400, thickness: 2, color: "#000000" });
-            clearSelection(); selectedLinearId = newId; renderSelection(); drawMap(); saveState();
+            selectSingleItem('linear', newId); renderSelection(); drawMap(); saveState();
         });
 
         btnAddRecomb.addEventListener("click", () => {
             const newId = nextRecombId++;
             recombsData.push({ 
-                id: newId, type: "polygon", color: "#2196F3", 
+                id: newId, type: "cross", color: "#2196F3", 
                 p1x: plasmidX - 150, p1y: plasmidY + 130, p2x: plasmidX + 150, p2y: plasmidY + 130, 
                 p3x: plasmidX + 150, p3y: plasmidY + 250, p4x: plasmidX - 150, p4y: plasmidY + 250,
                 binds: {p1: null, p2: null, p3: null, p4: null}
             });
-            clearSelection(); selectedRecombId = newId; renderSelection(); drawMap(); saveState();
+            selectSingleItem('recomb', newId); renderSelection(); drawMap(); saveState();
         });
 
         function getCleanSvgString() {
             const clonedSvg = svg.cloneNode(true);
             clonedSvg.querySelectorAll('.resize-handle').forEach(h => h.remove());
             clonedSvg.querySelectorAll('.hit-area').forEach(h => h.remove());
+            clonedSvg.querySelectorAll('#marquee-rect').forEach(m => m.remove());
             clonedSvg.querySelectorAll('.draggable-text text, .clickable-site text').forEach(t => { 
                 t.removeAttribute('stroke'); 
                 t.removeAttribute('stroke-width'); 
                 t.removeAttribute('stroke-dasharray'); 
             });
 
-            // Adobe Illustrator等のSVG 1.1互換ツール向けに xlink:href を確実に設定
             clonedSvg.querySelectorAll('textPath').forEach(tp => {
                 const ref = tp.getAttribute('href') || tp.getAttribute('xlink:href');
                 if (ref) {
@@ -593,12 +1191,6 @@
             const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
             style.textContent = `text { font-family: Arial, "Helvetica Neue", sans-serif; }`;
             clonedSvg.insertBefore(style, clonedSvg.firstChild);
-
-            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("width", "100%");
-            rect.setAttribute("height", "100%");
-            rect.setAttribute("fill", "white");
-            clonedSvg.insertBefore(rect, clonedSvg.firstChild);
 
             clonedSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
             clonedSvg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
@@ -625,6 +1217,10 @@
                 canvas.width = svg.getAttribute("width") || 800;
                 canvas.height = svg.getAttribute("height") || 800;
                 const ctx = canvas.getContext("2d");
+                if (format === 'jpeg') {
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
                 ctx.drawImage(img, 0, 0);
                 const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
                 const dataUrl = canvas.toDataURL(mimeType);
@@ -743,22 +1339,27 @@
             let allLinearsHTML = ""; let allRecombsHTML = "";
 
             recombsData.forEach(r => {
-                const isSelected = (r.id === selectedRecombId) ? " selected" : "";
+                const isSelected = isSelectedItem('recomb', r.id) ? " selected" : "";
                 let rHTML = "";
-                if (r.type === "polygon") rHTML = `<polygon points="${r.p1x},${r.p1y} ${r.p2x},${r.p2y} ${r.p3x},${r.p3y} ${r.p4x},${r.p4y}" fill="${r.color}" fill-opacity="0.2" stroke="${r.color}" stroke-opacity="0.5" stroke-width="1" />`;
-                else rHTML = `<line x1="${r.p1x}" y1="${r.p1y}" x2="${r.p3x}" y2="${r.p3y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" /><line x1="${r.p2x}" y1="${r.p2y}" x2="${r.p4x}" y2="${r.p4y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" />`;
+                let extraHitHTML = "";
+                if (r.type === "polygon") {
+                    rHTML = `<polygon points="${r.p1x},${r.p1y} ${r.p2x},${r.p2y} ${r.p3x},${r.p3y} ${r.p4x},${r.p4y}" fill="${r.color}" fill-opacity="0.2" stroke="${r.color}" stroke-opacity="0.5" stroke-width="1" />`;
+                } else {
+                    rHTML = `<line x1="${r.p1x}" y1="${r.p1y}" x2="${r.p3x}" y2="${r.p3y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" /><line x1="${r.p2x}" y1="${r.p2y}" x2="${r.p4x}" y2="${r.p4y}" stroke="${r.color}" stroke-width="2" stroke-dasharray="5,5" />`;
+                    extraHitHTML = `<line class="hit-area" x1="${r.p1x}" y1="${r.p1y}" x2="${r.p3x}" y2="${r.p3y}" stroke="transparent" stroke-width="12" style="pointer-events: stroke; cursor: grab;" /><line class="hit-area" x1="${r.p2x}" y1="${r.p2y}" x2="${r.p4x}" y2="${r.p4y}" stroke="transparent" stroke-width="12" style="pointer-events: stroke; cursor: grab;" />`;
+                }
                 const hitPolygon = `<polygon class="hit-area" points="${r.p1x},${r.p1y} ${r.p2x},${r.p2y} ${r.p3x},${r.p3y} ${r.p4x},${r.p4y}" fill="transparent" style="pointer-events: all; cursor: grab;" />`;
                 const h1 = `<circle cx="${r.p1x}" cy="${r.p1y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p1" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
                 const h2 = `<circle cx="${r.p2x}" cy="${r.p2y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p2" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
                 const h3 = `<circle cx="${r.p3x}" cy="${r.p3y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p3" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
                 const h4 = `<circle cx="${r.p4x}" cy="${r.p4y}" r="6" class="resize-handle" data-id="${r.id}" data-type="recomb-p4" fill="white" stroke="${r.color}" stroke-width="1.5" />`;
-                allRecombsHTML += `<g class="hover-group draggable-recomb${isSelected}" data-id="${r.id}">${hitPolygon}${rHTML}${h1}${h2}${h3}${h4}</g>`;
+                allRecombsHTML += `<g class="hover-group draggable-recomb${isSelected}" data-id="${r.id}">${hitPolygon}${extraHitHTML}${rHTML}${h1}${h2}${h3}${h4}</g>`;
             });
 
             linearsData.forEach(l => {
-                const isSelected = (l.id === selectedLinearId) ? " selected" : "";
+                const isSelected = isSelectedItem('linear', l.id) ? " selected" : "";
                 const lineHTML = `<line class="hit-area" x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="transparent" stroke-width="${Math.max(15, l.thickness + 10)}" style="pointer-events: all; cursor: grab;" /><line x1="${l.x}" y1="${l.y}" x2="${l.x + l.width}" y2="${l.y}" stroke="${l.color}" stroke-width="${l.thickness}" stroke-linecap="round" style="pointer-events: none;" />`;
-                const textHTML = `<text x="${l.x - 10}" y="${l.y}" font-family="Arial, sans-serif" font-size="${globalFontSize}" font-weight="bold" fill="black" text-anchor="end" dy="0.35em" style="pointer-events: none;">${l.name}</text>`;
+                const textHTML = `<text class="linear-label" x="${l.x - 10}" y="${l.y}" font-family="Arial, sans-serif" font-size="${globalFontSize}" font-weight="bold" fill="black" text-anchor="end" dy="0.35em" style="pointer-events: none;">${l.name}</text>`;
                 const hLeft = `<circle cx="${l.x}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-start" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
                 const hRight = `<circle cx="${l.x + l.width}" cy="${l.y}" r="6" class="resize-handle" data-id="${l.id}" data-type="linear-end" fill="white" stroke="${l.color}" stroke-width="1.5" />`;
                 allLinearsHTML += `<g class="hover-group draggable-linear${isSelected}" data-id="${l.id}">${lineHTML}${textHTML}${hLeft}${hRight}</g>`;
@@ -767,7 +1368,7 @@
             genesData.forEach(gene => {
                 if (gene.target === "plasmid" && !showPlasmid) return;
 
-                const isSelected = (gene.id === selectedGeneId) ? " selected" : "";
+                const isSelected = isSelectedItem('gene', gene.id) ? " selected" : "";
                 const finalTextColor = gene.autoTextColor ? getContrastColor(gene.color) : gene.textColor;
                 const finalFontSize = gene.fontSize || globalFontSize;
                 const fontStyle = gene.isItalic ? 'font-style="italic"' : '';
@@ -903,14 +1504,13 @@
             sitesData.forEach(site => {
                 if (site.target === "plasmid" && !showPlasmid) return;
 
-                const isSelected = (site.id === selectedSiteId) ? " selected" : "";
+                const isSelected = isSelectedItem('site', site.id) ? " selected" : "";
                 const finalFontSize = site.fontSize || globalFontSize;
                 const fontStyle = site.isItalic ? 'font-style="italic"' : '';
                 const siteColor = site.color || "#ff0000";
                 let cutLineWidth = site.lineWidth !== undefined ? site.lineWidth : Math.max(2, thickness * 0.12);
                 const hitAreaWidth = Math.max(12, cutLineWidth + 10);
-                let userOffset = site.textOffset !== undefined ? site.textOffset : 15;
-                if (site.cutType === "none" && site.textOffset === undefined) userOffset = 5; 
+                const { lineProtrusion, textGap } = getSiteMetrics(site, thickness);
 
                 if (site.target && site.target.startsWith("linear_")) {
                     const lId = parseInt(site.target.split("_")[1]);
@@ -920,7 +1520,6 @@
                     const posX = l.x + (site.bp / l.bpLength) * l.width;
                     const y = l.y;
                     
-                    let lineProtrusion = site.cutType === "none" ? 0 : Math.max(10, thickness * 0.4);
                     let topY = y - (thickness / 2) - lineProtrusion;
                     let botY = y + (thickness / 2) + lineProtrusion;
                     
@@ -933,10 +1532,10 @@
                     const visibleLineHTML = (site.cutType !== "none") ? `<path d="${pathD}" fill="none" stroke="${siteColor}" stroke-width="${cutLineWidth}" style="pointer-events: none;" />` : "";
                     const lineHTML = `<path class="hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${hitAreaWidth}" style="pointer-events: all; cursor: grab;" />${visibleLineHTML}`;
 
-                    let textY = topY - userOffset;
+                    let textY = topY - textGap;
                     const textHTML = `
                         <text class="hit-area" x="${posX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="middle" style="pointer-events: all; cursor: grab;">${site.name}</text>
-                        <text x="${posX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="middle" style="pointer-events: none;">${site.name}</text>
+                        <text class="site-label" x="${posX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="middle" style="pointer-events: none;">${site.name}</text>
                     `;
                     const handleHTML = `<circle cx="${posX}" cy="${topY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
                     allLinearsHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
@@ -944,8 +1543,8 @@
                 else {
                     let angleDeg = (site.bp / totalLength) * 360 - 90; let theta = angleDeg * (Math.PI / 180);
                     let pathD = ""; let outX, outY;
-                    let lineProtrusion = site.cutType === "none" ? 0 : Math.max(10, thickness * 0.4); 
-                    let outerR = 200 + (thickness / 2) + lineProtrusion; let innerR = 200 - (thickness / 2) - lineProtrusion; 
+                    let outerR = 200 + (thickness / 2) + lineProtrusion;
+                    let innerR = Math.max(0, 200 - (thickness / 2) - lineProtrusion);
                     
                     if (site.cutType === "blunt" || site.cutType === "none") {
                         outX = plasmidX + outerR * Math.cos(theta); outY = plasmidY + outerR * Math.sin(theta);
@@ -964,13 +1563,14 @@
                     const visibleLineHTML = (site.cutType !== "none") ? `<path d="${pathD}" fill="none" stroke="${siteColor}" stroke-width="${cutLineWidth}" style="pointer-events: none;" />` : "";
                     const lineHTML = `<path class="hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${hitAreaWidth}" style="pointer-events: all; cursor: grab;" />${visibleLineHTML}`;
 
-                    const textRadius = outerR + userOffset; const textPos = getCoordinates(site.bp, totalLength, textRadius, plasmidX, plasmidY); 
+                    const textRadius = outerR + textGap;
+                    const textPos = getCoordinates(site.bp, totalLength, textRadius, plasmidX, plasmidY); 
                     let textRotation = angleDeg; let anchor = "start"; let normalizedAngle = ((angleDeg % 360) + 360) % 360;
                     if (normalizedAngle > 90 && normalizedAngle < 270) { textRotation += 180; anchor = "end"; }
                     
                     const textHTML = `
                         <text class="hit-area" x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="transparent" stroke="transparent" stroke-width="12" text-anchor="${anchor}" dy="0.35em" style="pointer-events: all; cursor: grab;">${site.name}</text>
-                        <text x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="${anchor}" dy="0.35em" style="pointer-events: none;">${site.name}</text>
+                        <text class="site-label" x="${textPos.x}" y="${textPos.y}" transform="rotate(${textRotation}, ${textPos.x}, ${textPos.y})" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="black" text-anchor="${anchor}" dy="0.35em" style="pointer-events: none;">${site.name}</text>
                     `;
                     const handleHTML = `<circle cx="${outX}" cy="${outY}" r="6" class="resize-handle" data-id="${site.id}" data-type="site" fill="white" stroke="${siteColor}" stroke-width="1.5" />`;
                     allSitesHTML += `<g class="hover-group clickable-site${isSelected}" data-id="${site.id}">${lineHTML}${textHTML}${handleHTML}</g>`;
@@ -978,13 +1578,13 @@
             });
 
             textsData.forEach(t => {
-                const isSelected = (t.id === selectedTextId);
+                const isSelected = isSelectedItem('text', t.id);
                 const fontStyle = t.isItalic ? 'font-style="italic"' : '';
                 const strokeProps = isSelected ? `stroke="#9c27b0" stroke-width="1" stroke-dasharray="3,3"` : "";
                 allTextsHTML += `
                     <g class="draggable-text" data-id="${t.id}">
                         <text class="hit-area" x="${t.x}" y="${t.y}" font-family="Arial, sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="transparent" stroke="transparent" stroke-width="15" text-anchor="middle" dy="0.35em" style="pointer-events: all; cursor: grab;">${t.text}</text>
-                        <text x="${t.x}" y="${t.y}" font-family="Arial, sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="${t.color}" text-anchor="middle" dy="0.35em" ${strokeProps} style="pointer-events: none;">${t.text}</text>
+                        <text class="free-text-label" x="${t.x}" y="${t.y}" font-family="Arial, sans-serif" font-size="${t.fontSize}" ${fontStyle} fill="${t.color}" text-anchor="middle" dy="0.35em" ${strokeProps} style="pointer-events: none;">${t.text}</text>
                     </g>
                 `;
             });
@@ -993,9 +1593,309 @@
             svg.innerHTML = allDefsHTML + circleHTML + allRecombsHTML + allLinearsHTML + allGenesHTML + allSitesHTML + nameTextHTML + lengthTextHTML + allTextsHTML;
         }
 
+        // --- 矩形範囲選択（Marquee Selection）用の幾何判定ヘルパー ---
+        function rectsOverlap(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
+            return !(ax2 < bx1 || ax1 > bx2 || ay2 < by1 || ay1 > by2);
+        }
+
+        function pointInRect(px, py, rx1, ry1, rx2, ry2) {
+            return px >= rx1 && px <= rx2 && py >= ry1 && py <= ry2;
+        }
+
+        function segmentsIntersect(p1x, p1y, p2x, p2y, q1x, q1y, q2x, q2y) {
+            const onSeg = (ax, ay, bx, by, cx, cy) =>
+                bx <= Math.max(ax, cx) && bx >= Math.min(ax, cx) &&
+                by <= Math.max(ay, cy) && by >= Math.min(ay, cy);
+
+            const d1 = (q2y - p1y) * (q1x - p1x) - (q1y - p1y) * (q2x - p1x);
+            const d2 = (q2y - p2y) * (q1x - p2x) - (q1y - p2y) * (q2x - p2x);
+            const d3 = (p2y - q1y) * (p1x - q1x) - (p1y - q1y) * (p2x - q1x);
+            const d4 = (p2y - q2y) * (p1x - q2x) - (p1y - q2y) * (p2x - q2x);
+
+            if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+                ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+                return true;
+            }
+            if (d1 === 0 && onSeg(q1x, q1y, p1x, p1y, q2x, q2y)) return true;
+            if (d2 === 0 && onSeg(q1x, q1y, p2x, p2y, q2x, q2y)) return true;
+            if (d3 === 0 && onSeg(p1x, p1y, q1x, q1y, p2x, p2y)) return true;
+            if (d4 === 0 && onSeg(p1x, p1y, q2x, q2y, p2x, p2y)) return true;
+            return false;
+        }
+
+        function segmentIntersectsRect(x1, y1, x2, y2, rx1, ry1, rx2, ry2) {
+            if (pointInRect(x1, y1, rx1, ry1, rx2, ry2) || pointInRect(x2, y2, rx1, ry1, rx2, ry2)) return true;
+            if (!rectsOverlap(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2), rx1, ry1, rx2, ry2)) return false;
+            return (
+                segmentsIntersect(x1, y1, x2, y2, rx1, ry1, rx2, ry1) ||
+                segmentsIntersect(x1, y1, x2, y2, rx2, ry1, rx2, ry2) ||
+                segmentsIntersect(x1, y1, x2, y2, rx2, ry2, rx1, ry2) ||
+                segmentsIntersect(x1, y1, x2, y2, rx1, ry2, rx1, ry1)
+            );
+        }
+
+        function pointInPolygon(px, py, pts) {
+            let inside = false;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const xi = pts[i].x, yi = pts[i].y;
+                const xj = pts[j].x, yj = pts[j].y;
+                const intersect = ((yi > py) !== (yj > py)) &&
+                    (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-9) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        function polygonIntersectsRect(pts, rx1, ry1, rx2, ry2) {
+            for (const p of pts) {
+                if (pointInRect(p.x, p.y, rx1, ry1, rx2, ry2)) return true;
+            }
+            const rectCorners = [
+                { x: rx1, y: ry1 }, { x: rx2, y: ry1 },
+                { x: rx2, y: ry2 }, { x: rx1, y: ry2 }
+            ];
+            for (const c of rectCorners) {
+                if (pointInPolygon(c.x, c.y, pts)) return true;
+            }
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i];
+                const b = pts[(i + 1) % pts.length];
+                if (segmentIntersectsRect(a.x, a.y, b.x, b.y, rx1, ry1, rx2, ry2)) return true;
+            }
+            return false;
+        }
+
+        function getElementSvgBounds(el, svgRect) {
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) return null;
+            return {
+                x1: r.left - svgRect.left,
+                y1: r.top - svgRect.top,
+                x2: r.right - svgRect.left,
+                y2: r.bottom - svgRect.top
+            };
+        }
+
+        function circularSectorIntersectsRect(startBp, endBp, totalLength, rInner, rOuter, cx, cy, rx1, ry1, rx2, ry2) {
+            let dist = endBp - startBp;
+            if (dist < 0) dist += totalLength;
+            if (dist === 0) return false;
+
+            const steps = Math.max(8, Math.ceil((dist / totalLength) * 90));
+            const outerPts = [];
+            const innerPts = [];
+            for (let i = 0; i <= steps; i++) {
+                const bp = (startBp + (dist * i) / steps) % totalLength;
+                outerPts.push(getCoordinates(bp, totalLength, rOuter, cx, cy));
+                innerPts.push(getCoordinates(bp, totalLength, rInner, cx, cy));
+            }
+
+            for (let i = 0; i < outerPts.length; i++) {
+                if (pointInRect(outerPts[i].x, outerPts[i].y, rx1, ry1, rx2, ry2)) return true;
+                if (pointInRect(innerPts[i].x, innerPts[i].y, rx1, ry1, rx2, ry2)) return true;
+                if (i > 0) {
+                    if (segmentIntersectsRect(outerPts[i - 1].x, outerPts[i - 1].y, outerPts[i].x, outerPts[i].y, rx1, ry1, rx2, ry2)) return true;
+                    if (segmentIntersectsRect(innerPts[i - 1].x, innerPts[i - 1].y, innerPts[i].x, innerPts[i].y, rx1, ry1, rx2, ry2)) return true;
+                }
+            }
+            if (segmentIntersectsRect(outerPts[0].x, outerPts[0].y, innerPts[0].x, innerPts[0].y, rx1, ry1, rx2, ry2)) return true;
+            const last = outerPts.length - 1;
+            if (segmentIntersectsRect(outerPts[last].x, outerPts[last].y, innerPts[last].x, innerPts[last].y, rx1, ry1, rx2, ry2)) return true;
+
+            const startNorm = ((startBp % totalLength) + totalLength) % totalLength;
+            const endNorm = ((endBp % totalLength) + totalLength) % totalLength;
+            const rectCorners = [
+                { x: rx1, y: ry1 }, { x: rx2, y: ry1 },
+                { x: rx2, y: ry2 }, { x: rx1, y: ry2 }
+            ];
+            for (const c of rectCorners) {
+                const dx = c.x - cx;
+                const dy = c.y - cy;
+                const rad = Math.hypot(dx, dy);
+                if (rad >= rInner && rad <= rOuter) {
+                    let ang = Math.atan2(dy, dx) + Math.PI / 2;
+                    if (ang < 0) ang += 2 * Math.PI;
+                    const bpAtCorner = (ang / (2 * Math.PI)) * totalLength;
+                    const inSpan = startNorm <= endNorm
+                        ? (bpAtCorner >= startNorm && bpAtCorner <= endNorm)
+                        : (bpAtCorner >= startNorm || bpAtCorner <= endNorm);
+                    if (inSpan) return true;
+                }
+            }
+            return false;
+        }
+
+        function getItemsInMarquee(rx1, ry1, rx2, ry2) {
+            const hits = [];
+            const thickness = Number(inputThickness.value) || 15;
+            const totalLength = Number(inputLength.value) || 5000;
+            const showPlasmid = inputShowPlasmid.checked;
+            const svgRect = svg.getBoundingClientRect();
+
+            // 1. Genes
+            genesData.forEach(gene => {
+                if (gene.target === "plasmid" && !showPlasmid) return;
+                if (gene.target && gene.target.startsWith("linear_")) {
+                    const lId = parseInt(gene.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (!l) return;
+                    const startX = l.x + (gene.start / l.bpLength) * l.width;
+                    const endX = l.x + (gene.end / l.bpLength) * l.width;
+                    const gx1 = Math.min(startX, endX);
+                    const gx2 = Math.max(startX, endX);
+                    const gy1 = l.y - thickness / 2;
+                    const gy2 = l.y + thickness / 2;
+                    if (rectsOverlap(gx1, gy1, gx2, gy2, rx1, ry1, rx2, ry2)) {
+                        hits.push({ type: 'gene', id: gene.id });
+                    }
+                } else {
+                    const rOuter = 200 + thickness / 2;
+                    const rInner = 200 - thickness / 2;
+                    if (circularSectorIntersectsRect(gene.start, gene.end, totalLength, rInner, rOuter, plasmidX, plasmidY, rx1, ry1, rx2, ry2)) {
+                        hits.push({ type: 'gene', id: gene.id });
+                    }
+                }
+            });
+
+            // 2. Restriction Sites
+            sitesData.forEach(site => {
+                if (site.target === "plasmid" && !showPlasmid) return;
+                let lineHit = false;
+                const { lineProtrusion } = getSiteMetrics(site, thickness);
+                if (site.target && site.target.startsWith("linear_")) {
+                    const lId = parseInt(site.target.split("_")[1]);
+                    const l = linearsData.find(x => x.id === lId);
+                    if (!l) return;
+                    const posX = l.x + (site.bp / l.bpLength) * l.width;
+                    const y = l.y;
+                    const topY = y - (thickness / 2) - lineProtrusion;
+                    const botY = y + (thickness / 2) + lineProtrusion;
+                    if (site.cutType === "sticky") {
+                        const offsetPx = Math.max(6, thickness * 0.3);
+                        lineHit = segmentIntersectsRect(posX, topY, posX, y, rx1, ry1, rx2, ry2) ||
+                                  segmentIntersectsRect(posX, y, posX + offsetPx, y, rx1, ry1, rx2, ry2) ||
+                                  segmentIntersectsRect(posX + offsetPx, y, posX + offsetPx, botY, rx1, ry1, rx2, ry2);
+                    } else {
+                        lineHit = segmentIntersectsRect(posX, topY, posX, botY, rx1, ry1, rx2, ry2);
+                    }
+                } else {
+                    const angleDeg = (site.bp / totalLength) * 360 - 90;
+                    const theta = angleDeg * (Math.PI / 180);
+                    const outerR = 200 + (thickness / 2) + lineProtrusion;
+                    const innerR = Math.max(0, 200 - (thickness / 2) - lineProtrusion);
+                    if (site.cutType === "blunt" || site.cutType === "none") {
+                        const outX = plasmidX + outerR * Math.cos(theta);
+                        const outY = plasmidY + outerR * Math.sin(theta);
+                        const inX = plasmidX + innerR * Math.cos(theta);
+                        const inY = plasmidY + innerR * Math.sin(theta);
+                        lineHit = segmentIntersectsRect(outX, outY, inX, inY, rx1, ry1, rx2, ry2);
+                    } else {
+                        const offsetPx = Math.max(6, thickness * 0.3);
+                        const offsetRad = offsetPx / 200;
+                        const t1 = theta - offsetRad;
+                        const t2 = theta + offsetRad;
+                        const outX = plasmidX + outerR * Math.cos(t1);
+                        const outY = plasmidY + outerR * Math.sin(t1);
+                        const p2x = plasmidX + 200 * Math.cos(t1);
+                        const p2y = plasmidY + 200 * Math.sin(t1);
+                        const p3x = plasmidX + 200 * Math.cos(t2);
+                        const p3y = plasmidY + 200 * Math.sin(t2);
+                        const p4x = plasmidX + innerR * Math.cos(t2);
+                        const p4y = plasmidY + innerR * Math.sin(t2);
+                        lineHit = segmentIntersectsRect(outX, outY, p2x, p2y, rx1, ry1, rx2, ry2) ||
+                                  segmentIntersectsRect(p2x, p2y, p3x, p3y, rx1, ry1, rx2, ry2) ||
+                                  segmentIntersectsRect(p3x, p3y, p4x, p4y, rx1, ry1, rx2, ry2);
+                    }
+                }
+
+                let labelHit = false;
+                const siteGroup = svg.querySelector(`.clickable-site[data-id="${site.id}"] .site-label`);
+                const bounds = getElementSvgBounds(siteGroup, svgRect);
+                if (bounds && rectsOverlap(bounds.x1, bounds.y1, bounds.x2, bounds.y2, rx1, ry1, rx2, ry2)) {
+                    labelHit = true;
+                }
+
+                if (lineHit || labelHit) {
+                    hits.push({ type: 'site', id: site.id });
+                }
+            });
+
+            // 3. Linear DNAs
+            linearsData.forEach(l => {
+                const halfTh = Math.max(4, l.thickness / 2);
+                const lineHit = rectsOverlap(l.x, l.y - halfTh, l.x + l.width, l.y + halfTh, rx1, ry1, rx2, ry2);
+                let labelHit = false;
+                const labelEl = svg.querySelector(`.draggable-linear[data-id="${l.id}"] .linear-label`);
+                const bounds = getElementSvgBounds(labelEl, svgRect);
+                if (bounds && rectsOverlap(bounds.x1, bounds.y1, bounds.x2, bounds.y2, rx1, ry1, rx2, ry2)) {
+                    labelHit = true;
+                }
+                if (lineHit || labelHit) {
+                    hits.push({ type: 'linear', id: l.id });
+                }
+            });
+
+            // 4. Recombinations
+            recombsData.forEach(r => {
+                let hit = false;
+                if (r.type === "polygon") {
+                    const pts = [
+                        { x: r.p1x, y: r.p1y }, { x: r.p2x, y: r.p2y },
+                        { x: r.p3x, y: r.p3y }, { x: r.p4x, y: r.p4y }
+                    ];
+                    hit = polygonIntersectsRect(pts, rx1, ry1, rx2, ry2);
+                } else {
+                    hit = segmentIntersectsRect(r.p1x, r.p1y, r.p3x, r.p3y, rx1, ry1, rx2, ry2) ||
+                          segmentIntersectsRect(r.p2x, r.p2y, r.p4x, r.p4y, rx1, ry1, rx2, ry2);
+                }
+                if (hit) {
+                    hits.push({ type: 'recomb', id: r.id });
+                }
+            });
+
+            // 5. Free Texts
+            textsData.forEach(t => {
+                const textEl = svg.querySelector(`.draggable-text[data-id="${t.id}"] .free-text-label`);
+                const bounds = getElementSvgBounds(textEl, svgRect);
+                if (bounds && rectsOverlap(bounds.x1, bounds.y1, bounds.x2, bounds.y2, rx1, ry1, rx2, ry2)) {
+                    hits.push({ type: 'text', id: t.id });
+                }
+            });
+
+            return hits;
+        }
+
+        function renderMarqueeOverlay(rx1, ry1, rx2, ry2) {
+            let rectEl = svg.querySelector('#marquee-rect');
+            if (!rectEl) {
+                rectEl = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rectEl.setAttribute("id", "marquee-rect");
+                rectEl.setAttribute("fill", "rgba(33, 150, 243, 0.15)");
+                rectEl.setAttribute("stroke", "#2196F3");
+                rectEl.setAttribute("stroke-width", "1.5");
+                rectEl.setAttribute("stroke-dasharray", "4,4");
+                rectEl.setAttribute("style", "pointer-events: none;");
+                svg.appendChild(rectEl);
+            }
+            rectEl.setAttribute("x", rx1);
+            rectEl.setAttribute("y", ry1);
+            rectEl.setAttribute("width", Math.max(0, rx2 - rx1));
+            rectEl.setAttribute("height", Math.max(0, ry2 - ry1));
+        }
+
+        function removeMarqueeOverlay() {
+            const rectEl = svg.querySelector('#marquee-rect');
+            if (rectEl) rectEl.remove();
+        }
+
         let draggingElement = null; let dragMode = null; let draggingObj = null;
         let dragLastAngle = 0; let dragCumulativeAngle = 0;
         let dragInitialData = null; let dragInitialMouse = {x: 0, y: 0};
+        let dragGroupInitial = null;
+        let didMoveDuringDrag = false;
+        let pendingSingleSelect = null;
+        let marqueeInitialSelection = [];
         let currentSnapPoints = []; 
         let wheelSaveTimeout = null;
 
@@ -1069,49 +1969,226 @@
             dragCumulativeAngle = 0;
         }
 
+        function captureGroupInitialState() {
+            dragGroupInitial = selectedItems.map(item => {
+                if (item.type === 'gene') {
+                    const g = genesData.find(x => x.id === item.id);
+                    return g ? { type: 'gene', id: g.id, target: g.target, start: g.start, end: g.end } : null;
+                } else if (item.type === 'site') {
+                    const s = sitesData.find(x => x.id === item.id);
+                    return s ? { type: 'site', id: s.id, target: s.target, bp: s.bp } : null;
+                } else if (item.type === 'text') {
+                    const t = textsData.find(x => x.id === item.id);
+                    return t ? { type: 'text', id: t.id, x: t.x, y: t.y } : null;
+                } else if (item.type === 'linear') {
+                    const l = linearsData.find(x => x.id === item.id);
+                    return l ? { type: 'linear', id: l.id, x: l.x, y: l.y } : null;
+                } else if (item.type === 'recomb') {
+                    const r = recombsData.find(x => x.id === item.id);
+                    if (r) {
+                        r.binds = { p1: null, p2: null, p3: null, p4: null };
+                        return { type: 'recomb', id: r.id, p1x: r.p1x, p1y: r.p1y, p2x: r.p2x, p2y: r.p2y, p3x: r.p3x, p3y: r.p3y, p4x: r.p4x, p4y: r.p4y };
+                    }
+                }
+                return null;
+            }).filter(Boolean);
+        }
+
+        svg.addEventListener("dblclick", (e) => {
+            const recombBody = e.target.closest('.draggable-recomb');
+            if (recombBody) {
+                const id = Number(recombBody.getAttribute("data-id"));
+                toggleRecombType(id);
+                return;
+            }
+            const siteBody = e.target.closest('.clickable-site');
+            if (siteBody) {
+                const id = Number(siteBody.getAttribute("data-id"));
+                toggleSiteCutType(id);
+            }
+        });
+
         svg.addEventListener("pointerdown", (e) => {
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
             const handle = e.target.closest('.resize-handle'); const geneBody = e.target.closest('.draggable-gene'); const siteBody = e.target.closest('.clickable-site');
             const textBody = e.target.closest('.draggable-text'); const linearBody = e.target.closest('.draggable-linear'); const recombBody = e.target.closest('.draggable-recomb');
             const plasmidBody = e.target.closest('.draggable-plasmid');
             const rect = svg.getBoundingClientRect(); dragInitialMouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
+            didMoveDuringDrag = false;
+            pendingSingleSelect = null;
+            dragGroupInitial = null;
+
             if (handle) {
                 const id = Number(handle.getAttribute("data-id")); const type = handle.getAttribute("data-type"); dragMode = type;
-                if (type === 'site') { clearSelection(); selectedSiteId = id; draggingElement = 'site'; draggingObj = sitesData.find(s => s.id === id); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
-                else if (type === 'start' || type === 'end') { clearSelection(); selectedGeneId = id; draggingElement = 'gene'; draggingObj = genesData.find(g => g.id === id); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
-                else if (type === 'linear-start' || type === 'linear-end') { clearSelection(); selectedLinearId = id; draggingElement = 'linear'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, width: draggingObj.width }; }
+                if (type === 'site') { selectSingleItem('site', id); draggingElement = 'site'; draggingObj = sitesData.find(s => s.id === id); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
+                else if (type === 'start' || type === 'end') { selectSingleItem('gene', id); draggingElement = 'gene'; draggingObj = genesData.find(g => g.id === id); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+                else if (type === 'linear-start' || type === 'linear-end') { selectSingleItem('linear', id); draggingElement = 'linear'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, width: draggingObj.width }; }
                 else if (type.startsWith('recomb-p')) { 
-                    clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; 
+                    selectSingleItem('recomb', id); draggingElement = 'recomb'; 
                     draggingObj = recombsData.find(r => r.id === id); 
                     dragInitialData = { ...draggingObj }; 
                     currentSnapPoints = getSnapPoints(); 
                 }
-            } else if (geneBody) { const id = Number(geneBody.getAttribute("data-id")); clearSelection(); selectedGeneId = id; draggingElement = 'gene'; dragMode = 'body'; draggingObj = genesData.find(g => g.id === id); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
-            else if (siteBody) { const id = Number(siteBody.getAttribute("data-id")); clearSelection(); selectedSiteId = id; draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === id); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
-            else if (textBody) { const id = Number(textBody.getAttribute("data-id")); clearSelection(); selectedTextId = id; draggingElement = 'text'; dragMode = 'body'; draggingObj = textsData.find(t => t.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
-            else if (linearBody) { const id = Number(linearBody.getAttribute("data-id")); clearSelection(); selectedLinearId = id; draggingElement = 'linear'; dragMode = 'body'; draggingObj = linearsData.find(l => l.id === id); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
-            else if (recombBody) { 
-                const id = Number(recombBody.getAttribute("data-id")); clearSelection(); selectedRecombId = id; draggingElement = 'recomb'; dragMode = 'body'; 
-                draggingObj = recombsData.find(r => r.id === id); 
-                draggingObj.binds = {p1:null, p2:null, p3:null, p4:null}; 
-                dragInitialData = { ...draggingObj }; 
+            } 
+            else if (geneBody || siteBody || textBody || linearBody || recombBody) {
+                let targetType = null;
+                let targetId = null;
+                if (geneBody) { targetType = 'gene'; targetId = Number(geneBody.getAttribute("data-id")); }
+                else if (siteBody) { targetType = 'site'; targetId = Number(siteBody.getAttribute("data-id")); }
+                else if (textBody) { targetType = 'text'; targetId = Number(textBody.getAttribute("data-id")); }
+                else if (linearBody) { targetType = 'linear'; targetId = Number(linearBody.getAttribute("data-id")); }
+                else if (recombBody) { targetType = 'recomb'; targetId = Number(recombBody.getAttribute("data-id")); }
+
+                if (e.shiftKey) {
+                    toggleItemSelection(targetType, targetId);
+                    renderSelection();
+                    drawMap();
+                    return;
+                } else {
+                    if (isSelectedItem(targetType, targetId) && selectedItems.length > 1) {
+                        pendingSingleSelect = { type: targetType, id: targetId };
+                    } else {
+                        selectSingleItem(targetType, targetId);
+                    }
+                }
+
+                if (selectedItems.length > 1) {
+                    draggingElement = 'group';
+                    dragMode = 'body';
+                    draggingObj = true;
+                    initAngleDrag(e);
+                    captureGroupInitialState();
+                } else {
+                    if (targetType === 'gene') { draggingElement = 'gene'; dragMode = 'body'; draggingObj = genesData.find(g => g.id === targetId); initAngleDrag(e); dragInitialData = { start: draggingObj.start, end: draggingObj.end }; }
+                    else if (targetType === 'site') { draggingElement = 'site'; dragMode = 'site'; draggingObj = sitesData.find(s => s.id === targetId); initAngleDrag(e); dragInitialData = { bp: draggingObj.bp }; }
+                    else if (targetType === 'text') { draggingElement = 'text'; dragMode = 'body'; draggingObj = textsData.find(t => t.id === targetId); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
+                    else if (targetType === 'linear') { draggingElement = 'linear'; dragMode = 'body'; draggingObj = linearsData.find(l => l.id === targetId); dragInitialData = { x: draggingObj.x, y: draggingObj.y }; }
+                    else if (targetType === 'recomb') { 
+                        draggingElement = 'recomb'; dragMode = 'body'; 
+                        draggingObj = recombsData.find(r => r.id === targetId); 
+                        draggingObj.binds = {p1:null, p2:null, p3:null, p4:null}; 
+                        dragInitialData = { ...draggingObj }; 
+                    }
+                }
             }
             else if (plasmidBody) {
-                clearSelection();
+                if (!e.shiftKey) clearSelection();
                 draggingElement = 'plasmid';
                 dragMode = 'body';
                 draggingObj = { x: plasmidX, y: plasmidY };
                 dragInitialData = { x: plasmidX, y: plasmidY };
             }
-            else clearSelection();
+            else {
+                // 空白エリアクリック：ドラッグで矩形範囲選択（Marquee Selection）を開始
+                if (!e.shiftKey) {
+                    clearSelection();
+                }
+                marqueeInitialSelection = JSON.parse(JSON.stringify(selectedItems));
+                draggingElement = 'marquee';
+                dragMode = 'marquee';
+                draggingObj = true;
+            }
             renderSelection(); drawMap();
         });
 
         window.addEventListener("pointermove", (e) => {
             if (!draggingElement || !draggingObj) return;
-            const rect = svg.getBoundingClientRect(); const dx = (e.clientX - rect.left) - dragInitialMouse.x; const dy = (e.clientY - rect.top) - dragInitialMouse.y;
-            
-            if (draggingElement === 'plasmid') {
+            const rect = svg.getBoundingClientRect();
+            const curX = e.clientX - rect.left;
+            const curY = e.clientY - rect.top;
+            const dx = curX - dragInitialMouse.x;
+            const dy = curY - dragInitialMouse.y;
+            if (Math.hypot(dx, dy) > 2) didMoveDuringDrag = true;
+
+            if (draggingElement === 'marquee') {
+                if (!didMoveDuringDrag) return;
+                const rx1 = Math.min(dragInitialMouse.x, curX);
+                const ry1 = Math.min(dragInitialMouse.y, curY);
+                const rx2 = Math.max(dragInitialMouse.x, curX);
+                const ry2 = Math.max(dragInitialMouse.y, curY);
+
+                const inBox = getItemsInMarquee(rx1, ry1, rx2, ry2);
+                const combined = [...marqueeInitialSelection];
+                inBox.forEach(item => {
+                    if (!combined.some(x => x.type === item.type && x.id === item.id)) {
+                        combined.push(item);
+                    }
+                });
+
+                const changed = combined.length !== selectedItems.length ||
+                    combined.some((item, idx) => item.type !== selectedItems[idx].type || item.id !== selectedItems[idx].id);
+
+                if (changed) {
+                    selectedItems = combined;
+                    drawMap();
+                    renderSelection();
+                }
+                renderMarqueeOverlay(rx1, ry1, rx2, ry2);
+                return;
+            }
+
+            if (draggingElement === 'group' && dragGroupInitial) {
+                const totalLength = Number(inputLength.value) || 5000;
+                const currentAngle = getAngleFromMouse(e);
+                let stepDiff = currentAngle - dragLastAngle;
+                if (stepDiff > Math.PI) stepDiff -= 2 * Math.PI;
+                if (stepDiff < -Math.PI) stepDiff += 2 * Math.PI;
+                dragCumulativeAngle += stepDiff;
+                dragLastAngle = currentAngle;
+                const bpDiffPlasmid = Math.round((dragCumulativeAngle / (2 * Math.PI)) * totalLength);
+
+                const selectedLinearIds = getSelectedIds('linear');
+
+                dragGroupInitial.forEach(init => {
+                    if (init.type === 'text') {
+                        const t = textsData.find(x => x.id === init.id);
+                        if (t) { t.x = init.x + dx; t.y = init.y + dy; }
+                    } else if (init.type === 'linear') {
+                        const l = linearsData.find(x => x.id === init.id);
+                        if (l) { l.x = init.x + dx; l.y = init.y + dy; }
+                    } else if (init.type === 'recomb') {
+                        const r = recombsData.find(x => x.id === init.id);
+                        if (r) {
+                            r.p1x = init.p1x + dx; r.p1y = init.p1y + dy;
+                            r.p2x = init.p2x + dx; r.p2y = init.p2y + dy;
+                            r.p3x = init.p3x + dx; r.p3y = init.p3y + dy;
+                            r.p4x = init.p4x + dx; r.p4y = init.p4y + dy;
+                        }
+                    } else if (init.type === 'gene') {
+                        const g = genesData.find(x => x.id === init.id);
+                        if (!g) return;
+                        if (init.target && init.target.startsWith("linear_")) {
+                            const lId = parseInt(init.target.split("_")[1]);
+                            if (selectedLinearIds.includes(lId)) return;
+                            const l = linearsData.find(x => x.id === lId);
+                            if (l) {
+                                const bpDiffLinear = (dx / l.width) * l.bpLength;
+                                g.start = Math.max(0, Math.min(l.bpLength, init.start + bpDiffLinear));
+                                g.end = Math.max(0, Math.min(l.bpLength, init.end + bpDiffLinear));
+                            }
+                        } else {
+                            g.start = ((init.start + bpDiffPlasmid) % totalLength + totalLength) % totalLength;
+                            g.end = ((init.end + bpDiffPlasmid) % totalLength + totalLength) % totalLength;
+                        }
+                    } else if (init.type === 'site') {
+                        const s = sitesData.find(x => x.id === init.id);
+                        if (!s) return;
+                        if (init.target && init.target.startsWith("linear_")) {
+                            const lId = parseInt(init.target.split("_")[1]);
+                            if (selectedLinearIds.includes(lId)) return;
+                            const l = linearsData.find(x => x.id === lId);
+                            if (l) {
+                                const bpDiffLinear = (dx / l.width) * l.bpLength;
+                                s.bp = Math.max(0, Math.min(l.bpLength, init.bp + bpDiffLinear));
+                            }
+                        } else {
+                            s.bp = ((init.bp + bpDiffPlasmid) % totalLength + totalLength) % totalLength;
+                        }
+                    }
+                });
+            }
+            else if (draggingElement === 'plasmid') {
                 plasmidX = dragInitialData.x + dx;
                 plasmidY = dragInitialData.y + dy;
             }
@@ -1193,8 +2270,18 @@
         });
 
         function handlePointerUp() { 
-            if (draggingElement && draggingObj) saveState(); 
-            draggingElement = null; draggingObj = null; dragMode = null; currentSnapPoints = []; 
+            if (draggingElement === 'marquee') {
+                removeMarqueeOverlay();
+                renderSelection();
+                drawMap();
+            } else if (pendingSingleSelect && !didMoveDuringDrag) {
+                selectSingleItem(pendingSingleSelect.type, pendingSingleSelect.id);
+                renderSelection();
+                drawMap();
+            } else if (draggingElement && draggingObj && didMoveDuringDrag) {
+                saveState(); 
+            }
+            draggingElement = null; draggingObj = null; dragMode = null; dragGroupInitial = null; pendingSingleSelect = null; marqueeInitialSelection = []; currentSnapPoints = []; 
         }
 
         window.addEventListener("pointerup", handlePointerUp);
@@ -1242,37 +2329,43 @@
         window.addEventListener("keydown", (e) => {
             if (!e.key) return;
             const key = e.key.toLowerCase();
-            
+            const activeTag = document.activeElement.tagName.toLowerCase();
+            const isInputFocused = (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select');
+
+            // Ctrl+I: 選択中のすべての対応オブジェクトの斜体を一括切り替え
             if ((e.ctrlKey || e.metaKey) && key === 'i') {
                 e.preventDefault(); 
-                let updated = false;
-                if (selectedGeneId !== null) {
-                    const obj = genesData.find(o => o.id === selectedGeneId);
-                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
-                } else if (selectedSiteId !== null) {
-                    const obj = sitesData.find(o => o.id === selectedSiteId);
-                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
-                } else if (selectedTextId !== null) {
-                    const obj = textsData.find(o => o.id === selectedTextId);
-                    if (obj) { obj.isItalic = !obj.isItalic; updated = true; }
-                }
-                
-                if (updated) { 
-                    renderSelection(); 
-                    drawMap(); 
-                    saveState(); 
-                }
+                batchToggleAllItalic();
                 return; 
             }
 
-            const activeTag = document.activeElement.tagName.toLowerCase();
-            if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+            if (isInputFocused) return;
+
+            // Ctrl+C: コピー
+            if ((e.ctrlKey || e.metaKey) && key === 'c') {
+                if (selectedItems.length > 0) {
+                    e.preventDefault();
+                    copySelectedItems();
+                }
+                return;
+            }
+
+            // Ctrl+V: ペースト（複製）
+            if ((e.ctrlKey || e.metaKey) && key === 'v') {
+                if (clipboardItems.length > 0) {
+                    e.preventDefault();
+                    pasteClipboardItems();
+                }
+                return;
+            }
             
             if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
             if (((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'z') || ((e.ctrlKey || e.metaKey) && key === 'y')) { e.preventDefault(); redo(); }
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedGeneId !== null) deleteGene(selectedGeneId); else if (selectedSiteId !== null) deleteSite(selectedSiteId);
-                else if (selectedTextId !== null) deleteText(selectedTextId); else if (selectedLinearId !== null) deleteLinear(selectedLinearId); else if (selectedRecombId !== null) deleteRecomb(selectedRecombId);
+                if (selectedItems.length > 0) {
+                    e.preventDefault();
+                    deleteSelectedItems();
+                }
             }
         });
 
