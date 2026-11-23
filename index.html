@@ -1169,6 +1169,93 @@
             selectSingleItem('recomb', newId); renderSelection(); drawMap(); saveState();
         });
 
+        // 環状プラスミドの遺伝子名(<textPath>)を、PowerPoint・Illustrator両対応の標準<text>群へ変換
+        function convertCircularGeneLabelToTexts(gene, totalLength, globalFontSize) {
+            const textStr = gene.name || "";
+            const svgNS = "http://www.w3.org/2000/svg";
+            const gEl = document.createElementNS(svgNS, "g");
+            if (!textStr) return gEl;
+
+            const finalTextColor = gene.autoTextColor ? getContrastColor(gene.color) : gene.textColor;
+            const finalFontSize = Number(gene.fontSize) || globalFontSize;
+
+            // 実DOM上のSVGでフォントに応じた正確な1文字ごとの幅を計測
+            const measureEl = document.createElementNS(svgNS, "text");
+            measureEl.setAttribute("font-family", "Arial, sans-serif");
+            measureEl.setAttribute("font-size", String(finalFontSize));
+            measureEl.setAttribute("font-weight", "bold");
+            if (gene.isItalic) measureEl.setAttribute("font-style", "italic");
+            measureEl.textContent = textStr;
+            svg.appendChild(measureEl);
+
+            const totalMeasured = measureEl.getComputedTextLength();
+            const charMetrics = [];
+            let idx = 0;
+            while (idx < textStr.length) {
+                const cp = textStr.codePointAt(idx);
+                const charLen = cp > 0xFFFF ? 2 : 1;
+                const ch = textStr.slice(idx, idx + charLen);
+                let w = 0;
+                try {
+                    w = measureEl.getSubStringLength(idx, charLen);
+                } catch (err) {
+                    w = finalFontSize * 0.6;
+                }
+                if (!w || w <= 0) {
+                    w = ch.trim() === "" ? finalFontSize * 0.3 : finalFontSize * 0.6;
+                }
+                charMetrics.push({ ch, width: w });
+                idx += charLen;
+            }
+            svg.removeChild(measureEl);
+
+            const totalWidth = totalMeasured > 0
+                ? totalMeasured
+                : charMetrics.reduce((acc, item) => acc + item.width, 0);
+
+            let midBp = (gene.start + gene.end) / 2;
+            if (gene.start > gene.end) midBp += totalLength / 2;
+            midBp = ((midBp % totalLength) + totalLength) % totalLength;
+            const percent = midBp / totalLength;
+            const isBottom = (percent > 0.25 && percent < 0.75);
+            const midAngle = (percent * 2 * Math.PI) - (Math.PI / 2);
+            const radius = 200;
+
+            let cursor = 0;
+            charMetrics.forEach(({ ch, width }) => {
+                const centerOffset = (cursor + width / 2) - (totalWidth / 2);
+                cursor += width;
+
+                if (ch.trim() === "") return;
+
+                const charAngle = isBottom
+                    ? (midAngle - centerOffset / radius)
+                    : (midAngle + centerOffset / radius);
+
+                const cx = plasmidX + radius * Math.cos(charAngle);
+                const cy = plasmidY + radius * Math.sin(charAngle);
+                const rotDeg = isBottom
+                    ? ((charAngle * 180 / Math.PI) - 90)
+                    : ((charAngle * 180 / Math.PI) + 90);
+
+                const charEl = document.createElementNS(svgNS, "text");
+                charEl.setAttribute("x", cx.toFixed(2));
+                charEl.setAttribute("y", cy.toFixed(2));
+                charEl.setAttribute("transform", `rotate(${rotDeg.toFixed(2)}, ${cx.toFixed(2)}, ${cy.toFixed(2)})`);
+                charEl.setAttribute("font-family", "Arial, sans-serif");
+                charEl.setAttribute("font-size", String(finalFontSize));
+                if (gene.isItalic) charEl.setAttribute("font-style", "italic");
+                charEl.setAttribute("font-weight", "bold");
+                charEl.setAttribute("fill", finalTextColor);
+                charEl.setAttribute("text-anchor", "middle");
+                charEl.setAttribute("dy", "0.35em");
+                charEl.textContent = ch;
+                gEl.appendChild(charEl);
+            });
+
+            return gEl;
+        }
+
         function getCleanSvgString() {
             const clonedSvg = svg.cloneNode(true);
             clonedSvg.querySelectorAll('.resize-handle').forEach(h => h.remove());
@@ -1179,6 +1266,25 @@
                 t.removeAttribute('stroke-width'); 
                 t.removeAttribute('stroke-dasharray'); 
             });
+
+            // PowerPoint等でも遺伝子名が表示されるよう、環状遺伝子の<textPath>を回転付き<text>群へ変換
+            const totalLength = Number(inputLength.value) || 5000;
+            const globalFontSize = Number(inputFontSize.value) || 14;
+            clonedSvg.querySelectorAll('text[data-gene-id]').forEach(textEl => {
+                const geneId = Number(textEl.getAttribute('data-gene-id'));
+                const gene = genesData.find(g => g.id === geneId);
+                if (gene) {
+                    const convertedGroup = convertCircularGeneLabelToTexts(gene, totalLength, globalFontSize);
+                    textEl.replaceWith(convertedGroup);
+                } else {
+                    textEl.removeAttribute('data-gene-id');
+                }
+            });
+
+            // 未使用となったtextPath用パスを整理
+            clonedSvg.querySelectorAll('path[id^="textPath-gene-"]').forEach(p => p.remove());
+            const defs = clonedSvg.querySelector('defs');
+            if (defs && defs.children.length === 0) defs.remove();
 
             clonedSvg.querySelectorAll('textPath').forEach(tp => {
                 const ref = tp.getAttribute('href') || tp.getAttribute('xlink:href');
@@ -1494,7 +1600,7 @@
                     
                     let textPathId = `textPath-gene-${gene.id}`;
                     allDefsHTML += `<path id="${textPathId}" d="M ${startX} ${startY} A 200 200 0 0 ${pathSweepFlag} ${endX} ${endY}" />`;
-                    const geneLabelHTML = `<text font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em"><textPath xlink:href="#${textPathId}" href="#${textPathId}" startOffset="50%">${gene.name}</textPath></text>`;
+                    const geneLabelHTML = `<text data-gene-id="${gene.id}" font-family="Arial, sans-serif" font-size="${finalFontSize}" ${fontStyle} font-weight="bold" fill="${finalTextColor}" text-anchor="middle" dy="0.35em"><textPath xlink:href="#${textPathId}" href="#${textPathId}" startOffset="50%">${gene.name}</textPath></text>`;
                     const startHandleHTML = `<circle cx="${visualStartPos.x}" cy="${visualStartPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="start" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     const endHandleHTML = `<circle cx="${visualEndPos.x}" cy="${visualEndPos.y}" r="5" class="resize-handle" data-id="${gene.id}" data-type="end" fill="white" stroke="${gene.color}" stroke-width="2" />`;
                     allGenesHTML += `<g class="hover-group${isSelected}"><g class="draggable-gene" data-id="${gene.id}" data-type="body">${elementHTML}${geneLabelHTML}</g>${startHandleHTML}${endHandleHTML}</g>`;
